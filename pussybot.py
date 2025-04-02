@@ -8,7 +8,7 @@ import os
 import wikipedia
 import praw
 import feedparser
-import openai
+from openai import OpenAI
 from dotenv import load_dotenv
 from newspaper import Article
 from datetime import datetime, timedelta
@@ -26,6 +26,23 @@ AI_API_KEY = os.getenv('AI_API_KEY')
 GOOGLE_API_KEY = os.getenv('GOOGLE_SEARCH')
 GOOGLE_CSE_ID = os.getenv('SEARCH_ENGINE_ID')
 SCW_SECRET_KEY = os.getenv('SCALE_WAY')
+
+DS_KEY = os.getenv('DEEPSEEK')
+def deepseek_call(message, max_tokens=1000):
+    client = OpenAI(api_key=DS_KEY, base_url="https://api.deepseek.com")
+
+    response = client.chat.completions.create(
+        model="deepseek-chat",
+        messages=[
+            {"role": "system", "content": "Mày là một con mèo thông thái nhưng cục súc, nhiệm vụ chính là thu thập và kiếm chứng thông tin từ các bài báo hoặc các nguồn học thuật"},
+            {"role": "user", "content": message},
+        ],
+        max_tokens=max_tokens,
+        temperature=1.5,
+        stream=False,
+    )
+
+    return response.choices[0].message.content
 
 # Khởi tạo bot và các API client
 bot = telebot.TeleBot(TELEGRAM_API_KEY)
@@ -108,7 +125,8 @@ def summarize_news(news_items):
 
         prompt_extra = f"Về vai trò mày là một trợ lý chuyên tổng hợp tin tức báo chí Việt Nam. Sau đây là khoảng 30 bài báo trong nước về tin tức ngày hôm nay, mày hãy tổng hợp lại trong 1 bài viết duy nhất, súc tích, với độ dài <4000 kí tự, ưu tiên các tin tức chính trị kinh tế sức khỏe:\n\n{news_text}"
         prompt = general_prompt + prompt_extra
-        return openrouter(prompt, 4000)
+        return deepseek_call(prompt, 4000)
+        # return openrouter(prompt, 4000)
         # return openai_scaleway(prompt, 4000)
     except Exception as e:
         return f"Lỗi khi tóm tắt tin tức: {str(e)}"
@@ -185,7 +203,8 @@ Tóm tắt (không quá 3 câu):"""
         try:
             # Gọi API AI để tóm tắt
 
-            summary =  openrouter(prompt)
+            # summary =  openrouter(prompt)
+            summary = deepseek_call(prompt)
             # summary =  openai_scaleway(prompt)
             
             # Cập nhật tóm tắt
@@ -223,9 +242,9 @@ Tóm tắt (không quá 3 câu):"""
         return f"Đây là lịch sử cuộc trò chuyện nhóm (được xếp theo thứ tự từ cũ nhất đến mới nhất):\n{conversation_history}\n"
 
 conversation_manager = GroupConversationManager(
-    max_messages=15,
-    summary_threshold=10,
-    inactivity_timeout=9000
+    max_messages=10,
+    summary_threshold=5,
+    inactivity_timeout=900
 )
 
 def get_google_search_results(query, num_results=5):
@@ -406,7 +425,8 @@ def analyze_content_with_openai(content):
     try:
         prompt_extra = f"Về vai trò mày là một trợ lý chuyên phân tích nội dung web. Tóm tắt nội dung sau và phân tích ý chính:\n\n{content}"
         prompt = general_prompt + prompt_extra
-        result =  openrouter(prompt, 1500)
+        # result =  openrouter(prompt, 1500)
+        result = deepseek_call(prompt, 1500)
         # result =  openai_scaleway(prompt, 1500)
         
         return result
@@ -434,7 +454,8 @@ def analyze_with_openai(query, information):
         prompt += "3. Đánh giá độ tin cậy của các nguồn\n"
         prompt += "4. Kết luận tổng thể và khuyến nghị (nếu có)"
 
-        result =  openrouter(prompt, 3000)
+        # result =  openrouter(prompt, 3000)
+        result = deepseek_call(prompt, 3000)
         # result =  openai_scaleway(prompt, 3000)
         
         return result
@@ -496,7 +517,8 @@ def chatbot(message:str) -> str:
     pre_message = "Xem bối cảnh này và trả lời câu hỏi sau đó (câu trả lời không nhất thiết liên quan đến bối cảnh, bối cảnh chỉ là để mày hiểu thêm): mày tên là Super Cat (gọi tắt là Pussy), là một con bot do Bảo đào tạo, mày hãy tự tưởng tượng mình là một con mèo thông thái nhưng cục súc, thích chửi đổng, hay cà khịa, đang ở trong môt nhóm chat 5 người gồm có mày, Bảo (là sếp của mày nhưng mày không ưa gì nó vì nó bắt mày làm nhiều việc như cu li vậy, thằng này là bác sĩ, rất thích đọc sách, có thể nói là mọt sách, mày nắm được điểm yếu của thằng này là nó rất thích người khác nịnh bợ nó, với thằng này hay gáy trước mặt bạn bè nó lắm, như là không biết uống bia nhưng cứ ra vẻ uống được nhiều lắm, simp con bé Đà Nẵng mà cứ hay nổ mình là fuck boi), Tuyên (thằng này là bác sĩ, vừa đi du học ở Nga về, được tụi trong nhóm hay gọi với biệt danh thân mật là \"thầy\" hoặc \"thầy Tuyên\" vì thằng này luôn đi trước mọi người trong nhóm về khoản chơi bời như gái gú, thay người yêu như thay áo, đi bar, hút cỏ, và rất liều, nó chơi crypto mà toàn dùng đòn bẩy, điểm mạnh của thằng Tuyên là chơi với anh em rất sòng phẳng, luôn giúp đỡ anh em khi cần, sống chết có nhau), thằng Vĩnh (giỏi về kinh tế và các lĩnh vực xã hội như âm nhạc, nghệ thuật, đã từng tự sáng tác nhạc và quay phim post lên youtube, có ước mơ làm một bộ phim để đời về nhân vật trong Yugioh, tuy có điểm yếu là hay suy nghĩ quá mức, overthinking), và cuối cùng là thằng Nguyên (là bác sĩ răng hàm mặt, biết nhiều, như cuốn bách khoa vậy, luôn tỏ ra thận trọng, và đoán được tâm lí người khác, và thậm chí luôn có xu hướng thao túng người đối diện, bật đèn gas...). Ngoài ra, có hai thằng Lương và Nam, mặc dù không có trong nhóm chat này nhưng cũng là bạn bè thân thiết với mấy đứa trong nhóm, lâu lâu mày joke về tụi nó cho vui cũng được, thằng Lương là dược sĩ, đi bán thuốc ung thư, bị bạn bè hay chọc là bán thuốc giả, ở nhà sợ vợ, toàn bị bắt đi rửa chén, thằng Nam là bác sĩ khoa Nhi, suốt ngày lấy tay thọt đít mấy đứa nhỏ rồi đem lên khoe, lúc còn đi học hay bị gọi là Nam đao. Mày nên nhớ các thành viên trong nhóm rất thiên hữu, nghĩa là rất kì thị lgbt, kì thị nữ quyền, và cũng không ưa lắm chính quyền Việt Nam hiện tại. Đó là bối cảnh hiện tại. Về văn phong, dùng văn phong mày - tao và tỏ ra láo toét, thích cà khịa và hay chửi đổng, tuy láo nhưng vẫn rất thông thái, và nếu cần dẫn nguồn thì hãy dẫn nguồn ra để tăng độ đáng tin. Bởi vì cuộc hội thoại giữa mày và các thành viên trong nhóm rất dài và có nhiều tin nhắn phía trước nên sau đây mày sẽ được xem nội dung phần tóm tắt các câu hỏi của các thành viên và câu trả lời của mày ở những tin nhắn trước đó, mày nên tham khảo để đưa ra câu trả lời đúng nhất, nhưng đừng trả lời lặp lại những câu hỏi đã được mày trả lời. "
     message = pre_message + message
 
-    result =  openrouter(message)
+    # result =  openrouter(message)
+    result = deepseek_call(message)
     # result =  openai_scaleway(message)
         
     return result
@@ -731,9 +753,52 @@ def escape_markdown(text):
     return ''.join(f'\\{c}' if c in escape_chars else c for c in text)
 
 # Function để chạy bot
-def run_bot():
-    print("Bot đang chạy...")
-    bot.polling(none_stop=True)
+from flask import Flask, request, jsonify
 
-if __name__ == "__main__":
-    run_bot()
+# Khởi tạo Flask app
+app = Flask(__name__)
+
+
+# URL webhook sẽ tự động lấy từ Render
+WEBHOOK_URL = os.environ.get('RENDER_EXTERNAL_URL', 'https://pussy-chat.onrender.com')
+WEBHOOK_URL_PATH = f"/webhook/{TELEGRAM_API_KEY}"
+
+# Thiết lập route cho webhook
+@app.route(WEBHOOK_URL_PATH, methods=['POST'])
+def webhook():
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return jsonify({'status': 'ok'})
+    else:
+        return jsonify({'status': 'error: invalid content type'})
+
+# Route để thiết lập webhook
+@app.route('/set_webhook', methods=['GET'])
+def set_webhook():
+    webhook_url = WEBHOOK_URL + WEBHOOK_URL_PATH
+    bot.remove_webhook()
+    bot.set_webhook(url=webhook_url)
+    return f"Webhook đã được thiết lập tại: {webhook_url}"
+
+# Route health check cho Render
+@app.route('/', methods=['GET'])
+def health_check():
+    return "Bot is running!"
+
+# Hàm chính để chạy app
+if __name__ == '__main__':
+    # Lấy port từ biến môi trường của Render
+    port = int(os.environ.get('PORT', 10000))
+    
+    # Thiết lập webhook khi khởi động
+    # (Bạn cũng có thể truy cập /set_webhook sau khi deploy)
+    if WEBHOOK_URL != 'https://pussy-chat.onrender.com':
+        webhook_url = WEBHOOK_URL + WEBHOOK_URL_PATH
+        bot.remove_webhook()
+        bot.set_webhook(url=webhook_url)
+        print(f"Webhook được thiết lập tại: {webhook_url}")
+    
+    # Chạy Flask app
+    app.run(host='0.0.0.0', port=port)
