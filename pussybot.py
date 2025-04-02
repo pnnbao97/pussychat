@@ -770,7 +770,7 @@ def webhook():
 # Route để thiết lập webhook
 @app.route('/')
 def set_webhook():
-    webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/{TELEGRAM_API_KEY}"
+    webhook_url = f"https://https://pussychat.onrender.com/{TELEGRAM_API_KEY}"
     bot.remove_webhook()  # Xóa webhook cũ nếu có
     bot.set_webhook(url=webhook_url)
     return "Webhook đã được thiết lập!", 200
