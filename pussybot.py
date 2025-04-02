@@ -12,7 +12,6 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from newspaper import Article
 from datetime import datetime, timedelta
-from flask import Flask, request
 import logging
 # Tải các biến môi trường từ file .env
 load_dotenv()
@@ -752,35 +751,11 @@ def escape_markdown(text):
     # Thoát các ký tự đặc biệt
     escape_chars = r'\_*[]()~`>#+-=|{}.!'
     return ''.join(f'\\{c}' if c in escape_chars else c for c in text)
-
-# Khởi tạo Flask app
-app = Flask(__name__)
+## Cấu hình logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-@app.route(f'/{TELEGRAM_API_KEY}', methods=['POST'])
-def webhook():
-    logger.info(f"Webhook received request: {request.method} {request.url}")
-    json_string = request.get_json(silent=True)
-    if json_string:
-        logger.info(f"Received update: {json_string}")
-        update = telebot.types.Update.de_json(json_string)
-        if update:
-            bot.process_new_updates([update])
-            logger.info("Update processed successfully")
-        else:
-            logger.warning("Failed to parse update from JSON")
-    else:
-        logger.warning("No JSON data received")
-    return 'OK', 200
-
+logger = logging.getLogger(__name__) 
+## Function để chạy bot
 if __name__ == "__main__":
-    # Thiết lập webhook một lần
-    webhook_url = f"https://pussychat.onrender.com/{TELEGRAM_API_KEY}"
-    bot.remove_webhook()  # Xóa webhook cũ
-    bot.set_webhook(url=webhook_url)
-    print(f"Webhook set to: {webhook_url}")
-
-    # Chạy Flask app
-    port = int(os.getenv("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    logger.info("Bot starting in polling mode")
+    bot.remove_webhook()  # Xóa webhook cũ nếu có
+    bot.polling(none_stop=True, interval=0, timeout=20)
