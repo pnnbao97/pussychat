@@ -46,7 +46,7 @@ def deepseek_call(message, max_tokens=1000):
     return response.choices[0].message.content
 
 # Khởi tạo bot và các API client
-bot = telebot.TeleBot(TELEGRAM_API_KEY)
+bot = telebot.TeleBot(TELEGRAM_API_KEY, threaded=False)
 
 # Khởi tạo Reddit client
 reddit = praw.Reddit(
@@ -766,7 +766,6 @@ def webhook():
         logger.info(f"Received update: {json_string}")
         update = telebot.types.Update.de_json(json_string)
         if update:
-            logger.info(f"Parsed update: {update}")
             bot.process_new_updates([update])
             logger.info("Update processed successfully")
         else:
