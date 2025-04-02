@@ -1,4 +1,5 @@
 import asyncio
+import signal
 from contextlib import contextmanager
 import requests
 from bs4 import BeautifulSoup
@@ -484,6 +485,7 @@ logger = logging.getLogger(__name__)
 
 # Hàm chạy bot với webhook
 async def main():
+    # Khởi tạo application
     application = Application.builder().token(TELEGRAM_API_KEY).build()
 
     # Đăng ký các handler
@@ -505,9 +507,9 @@ async def main():
 
     # Khởi tạo bot
     await application.initialize()
-
-    # Chạy bot với webhook
     await application.start()
+
+    # Chạy webhook
     await application.updater.start_webhook(
         listen="0.0.0.0",
         port=port,
@@ -515,8 +517,23 @@ async def main():
         webhook_url=webhook_url
     )
 
-    # Giữ bot chạy mãi mãi (không đóng loop)
-    await asyncio.Event().wait()
+    # Hàm xử lý shutdown
+    async def shutdown():
+        logger.info("Shutting down bot...")
+        await application.updater.stop()
+        await application.stop()
+        await application.shutdown()
+
+    # Đăng ký signal handler để xử lý khi bị kill
+    loop = asyncio.get_event_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, lambda: asyncio.create_task(shutdown()))
+
+    # Giữ bot chạy mãi mãi
+    try:
+        await asyncio.Event().wait()
+    except asyncio.CancelledError:
+        await shutdown()
 
 if __name__ == "__main__":
     # Lấy event loop hiện có
@@ -528,3 +545,5 @@ if __name__ == "__main__":
             # Nếu loop đã chạy, chạy main() trong loop hiện có
             asyncio.ensure_future(main())
             loop.run_forever()
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by user")
