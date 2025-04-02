@@ -483,67 +483,53 @@ async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Hàm chạy bot với webhook
-async def main():
-    # Khởi tạo application
-    application = Application.builder().token(TELEGRAM_API_KEY).build()
+from flask import Flask, request
+app = Flask(__name__)
+bot_application = None
+
+async def setup_bot():
+    global bot_application
+    bot_application = Application.builder().token(TELEGRAM_API_KEY).build()
 
     # Đăng ký các handler
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("analyze", analyze_command))
-    application.add_handler(CommandHandler("ask", ask_command))
-    application.add_handler(CommandHandler("domestic_news", domestic_news))
-    application.add_handler(CommandHandler("search", search))
-    application.add_handler(CommandHandler("wiki", wiki))
-    application.add_handler(CommandHandler("searchimg", searchimg))
-    application.add_handler(CommandHandler("news", news))
+    bot_application.add_handler(CommandHandler("start", start))
+    bot_application.add_handler(CommandHandler("help", help_command))
+    bot_application.add_handler(CommandHandler("analyze", analyze_command))
+    bot_application.add_handler(CommandHandler("ask", ask_command))
+    bot_application.add_handler(CommandHandler("domestic_news", domestic_news))
+    bot_application.add_handler(CommandHandler("search", search))
+    bot_application.add_handler(CommandHandler("wiki", wiki))
+    bot_application.add_handler(CommandHandler("searchimg", searchimg))
+    bot_application.add_handler(CommandHandler("news", news))
 
-    # Cấu hình webhook cho Cloud Render
+    # Cấu hình webhook
     webhook_url = "https://pussychat.onrender.com/webhook"
-    port = int(os.environ.get("PORT", 8443))  # Cloud Render yêu cầu dùng PORT từ env
-    await application.bot.set_webhook(url=webhook_url)
+    await bot_application.bot.set_webhook(url=webhook_url)
     logger.info(f"Webhook set to {webhook_url}")
 
-    # Khởi tạo bot
-    await application.initialize()
-    await application.start()
+    # Khởi tạo và chạy bot
+    await bot_application.initialize()
+    await bot_application.start()
 
-    # Chạy webhook
-    await application.updater.start_webhook(
-        listen="0.0.0.0",
-        port=port,
-        url_path="/webhook",
-        webhook_url=webhook_url
-    )
+    return bot_application
 
-    # Hàm xử lý shutdown
-    async def shutdown():
-        logger.info("Shutting down bot...")
-        await application.updater.stop()
-        await application.stop()
-        await application.shutdown()
+@app.route('/webhook', methods=['POST'])
+async def webhook():
+    global bot_application
+    if bot_application:
+        update = Update.de_json(request.get_json(force=True), bot_application.bot)
+        await bot_application.process_update(update)
+    return '', 200
 
-    # Đăng ký signal handler để xử lý khi bị kill
-    loop = asyncio.get_event_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, lambda: asyncio.create_task(shutdown()))
-
-    # Giữ bot chạy mãi mãi
-    try:
-        await asyncio.Event().wait()
-    except asyncio.CancelledError:
-        await shutdown()
+@app.route('/')
+def health_check():
+    return "Bot is running", 200
 
 if __name__ == "__main__":
-    # Lấy event loop hiện có
+    # Chạy setup_bot trong event loop
     loop = asyncio.get_event_loop()
-    try:
-        loop.run_until_complete(main())
-    except RuntimeError as e:
-        if "This event loop is already running" in str(e):
-            # Nếu loop đã chạy, chạy main() trong loop hiện có
-            asyncio.ensure_future(main())
-            loop.run_forever()
-    except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
+    loop.run_until_complete(setup_bot())
+
+    # Chạy Flask app với Gunicorn
+    port = int(os.environ.get("PORT", 8443))
+    app.run(host="0.0.0.0", port=port)
