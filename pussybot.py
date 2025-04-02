@@ -752,53 +752,30 @@ def escape_markdown(text):
     escape_chars = r'\_*[]()~`>#+-=|{}.!'
     return ''.join(f'\\{c}' if c in escape_chars else c for c in text)
 
-# Function để chạy bot
-from flask import Flask, request, jsonify
+from flask import Flask, request
 
 # Khởi tạo Flask app
 app = Flask(__name__)
 
 
-# URL webhook sẽ tự động lấy từ Render
-WEBHOOK_URL = os.environ.get('RENDER_EXTERNAL_URL', 'https://pussy-chat.onrender.com')
-WEBHOOK_URL_PATH = f"/webhook/{TELEGRAM_API_KEY}"
-
-# Thiết lập route cho webhook
-@app.route(WEBHOOK_URL_PATH, methods=['POST'])
+# Route xử lý webhook
+@app.route(f'/{TELEGRAM_API_KEY}', methods=['POST'])
 def webhook():
-    if request.headers.get('content-type') == 'application/json':
-        json_string = request.get_data().decode('utf-8')
-        update = types.Update.de_json(json_string)
-        bot.process_new_updates([update])
-        return jsonify({'status': 'ok'})
-    else:
-        return jsonify({'status': 'error: invalid content type'})
+    # Xử lý dữ liệu JSON từ Telegram
+    json_string = request.get_json()
+    update = telebot.types.Update.de_json(json_string)
+    bot.process_new_updates([update])
+    return 'OK', 200
 
 # Route để thiết lập webhook
-@app.route('/set_webhook', methods=['GET'])
+@app.route('/')
 def set_webhook():
-    webhook_url = WEBHOOK_URL + WEBHOOK_URL_PATH
-    bot.remove_webhook()
+    webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/{TELEGRAM_API_KEY}"
+    bot.remove_webhook()  # Xóa webhook cũ nếu có
     bot.set_webhook(url=webhook_url)
-    return f"Webhook đã được thiết lập tại: {webhook_url}"
+    return "Webhook đã được thiết lập!", 200
 
-# Route health check cho Render
-@app.route('/', methods=['GET'])
-def health_check():
-    return "Bot is running!"
-
-# Hàm chính để chạy app
-if __name__ == '__main__':
-    # Lấy port từ biến môi trường của Render
-    port = int(os.environ.get('PORT', 10000))
-    
-    # Thiết lập webhook khi khởi động
-    # (Bạn cũng có thể truy cập /set_webhook sau khi deploy)
-    if WEBHOOK_URL != 'https://pussy-chat.onrender.com':
-        webhook_url = WEBHOOK_URL + WEBHOOK_URL_PATH
-        bot.remove_webhook()
-        bot.set_webhook(url=webhook_url)
-        print(f"Webhook được thiết lập tại: {webhook_url}")
-    
-    # Chạy Flask app
-    app.run(host='0.0.0.0', port=port)
+# Chạy Flask app
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", 5000))  # Render cung cấp PORT
+    app.run(host="0.0.0.0", port=port)
