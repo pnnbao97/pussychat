@@ -553,13 +553,13 @@ def run_bot_setup():
 
 if __name__ == "__main__":
     # Chạy setup_bot trong một thread riêng
-    bot_thread = threading.Thread(target=run_bot_setup, daemon=False)
+    bot_thread = threading.Thread(target=run_bot_setup, daemon=True)
     bot_thread.start()
 
     # Đợi một chút để bot khởi tạo
     time.sleep(5)
 
     # Chạy Flask app với port từ env
-    port = int(os.environ.get("PORT", 8000))  # Dùng 8000 nếu PORT không set
+    port = int(os.environ.get("PORT", 10000))  # Dùng 8000 nếu PORT không set
     logger.info(f"Starting Flask on port {port}")
     app.run(host="0.0.0.0", port=port)
