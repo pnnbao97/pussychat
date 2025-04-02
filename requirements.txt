@@ -54,3 +54,4 @@ websocket-client==1.8.0
 wikipedia==1.4.0
 yarl==1.18.3
 youtube-transcript-api==1.0.3
+flask==2.0.1
