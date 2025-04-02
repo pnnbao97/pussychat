@@ -25,6 +25,7 @@ REDDIT_USER_AGENT = os.getenv('REDDIT_USER_AGENT')
 AI_API_KEY = os.getenv('AI_API_KEY')
 GOOGLE_API_KEY = os.getenv('GOOGLE_SEARCH')
 GOOGLE_CSE_ID = os.getenv('SEARCH_ENGINE_ID')
+SCW_SECRET_KEY = os.getenv('SCALE_WAY')
 
 # Khởi tạo bot và các API client
 bot = telebot.TeleBot(TELEGRAM_API_KEY)
@@ -43,6 +44,39 @@ RSS_FEEDS = [
     "https://www.bbc.co.uk/vietnamese/index.xml",
 ]
 
+def openai_scaleway(message, max_tokens=1000): 
+    client = openai.OpenAI(    
+        base_url = "https://api.scaleway.ai/732cb3d7-91db-4f3d-b308-4555d9b038f9/v1",    
+        api_key = "SCW_SECRET_KEY" # Replace SCW_SECRET_KEY with your IAM API key
+    )
+    response = client.chat.completions.create(    
+                model="deepseek-r1-distill-llama-70b",    
+                messages=[{ "role": "user", "content": message }],    
+                max_tokens=max_tokens,    
+                temperature=1,    
+                top_p=0.95,    
+                presence_penalty=0,    
+                stream=True,)
+    result = ""
+    for chunk in response:  
+            if chunk.choices and chunk.choices[0].delta.content:
+                result += chunk.choices[0].delta.content
+
+def openrouter(message, max_tokens=1000):
+        openai.api_base = "https://openrouter.ai/api/v1"
+        openai.api_key = AI_API_KEY
+        
+        # Gọi API OpenAI
+        response = openai.ChatCompletion.create(
+            model="deepseek/deepseek-chat:free",
+            messages=[
+                {"role": "user", "content": message},
+            ],
+            temperature=1,
+            max_tokens=max_tokens
+        )
+        
+        return response.choices[0].message.content
 # Hàm lấy tin tức từ RSS
 def fetch_news():
     news_items = []
@@ -74,20 +108,8 @@ def summarize_news(news_items):
 
         prompt_extra = f"Về vai trò mày là một trợ lý chuyên tổng hợp tin tức báo chí Việt Nam. Sau đây là khoảng 30 bài báo trong nước về tin tức ngày hôm nay, mày hãy tổng hợp lại trong 1 bài viết duy nhất, súc tích, với độ dài <4000 kí tự, ưu tiên các tin tức chính trị kinh tế sức khỏe:\n\n{news_text}"
         prompt = general_prompt + prompt_extra
-        openai.api_base = "https://openrouter.ai/api/v1"
-        openai.api_key = AI_API_KEY
-        
-        # Gọi API OpenAI
-        response = openai.ChatCompletion.create(
-            model="deepseek/deepseek-chat:free",
-            messages=[
-                {"role": "user", "content": prompt},
-            ],
-            temperature=1,
-            max_tokens=4000
-        )
-        
-        return response.choices[0].message.content
+        return openrouter(prompt, 4000)
+        # return openai_scaleway(prompt, 4000)
     except Exception as e:
         return f"Lỗi khi tóm tắt tin tức: {str(e)}"
 class GroupConversationManager:
@@ -163,14 +185,8 @@ Tóm tắt (không quá 3 câu):"""
         try:
             # Gọi API AI để tóm tắt
 
-            openai.api_base = "https://openrouter.ai/api/v1"
-            openai.api_key = AI_API_KEY
-            response = openai.ChatCompletion.create(
-              model="deepseek/deepseek-chat:free",
-              messages=[{"role": "user", "content": prompt}],
-              temperature=1,
-            )
-            summary = response.choices[0].message.content.strip()
+            summary =  openrouter(prompt)
+            # summary =  openai_scaleway(prompt)
             
             # Cập nhật tóm tắt
             if self.conversation_summaries[group_id]:
@@ -390,20 +406,10 @@ def analyze_content_with_openai(content):
     try:
         prompt_extra = f"Về vai trò mày là một trợ lý chuyên phân tích nội dung web. Tóm tắt nội dung sau và phân tích ý chính:\n\n{content}"
         prompt = general_prompt + prompt_extra
-        openai.api_base = "https://openrouter.ai/api/v1"
-        openai.api_key = AI_API_KEY
+        result =  openrouter(prompt, 1500)
+        # result =  openai_scaleway(prompt, 1500)
         
-        # Gọi API OpenAI
-        response = openai.ChatCompletion.create(
-            model="deepseek/deepseek-chat:free",
-            messages=[
-                {"role": "user", "content": prompt},
-            ],
-            temperature=1,
-            max_tokens=1500
-        )
-        
-        return response.choices[0].message.content
+        return result
     except Exception as e:
         return f"Lỗi khi phân tích nội dung: {str(e)}"
 # Function để phân tích thông tin bằng OpenAI API
@@ -428,20 +434,10 @@ def analyze_with_openai(query, information):
         prompt += "3. Đánh giá độ tin cậy của các nguồn\n"
         prompt += "4. Kết luận tổng thể và khuyến nghị (nếu có)"
 
-        openai.api_base = "https://openrouter.ai/api/v1"
-        openai.api_key = AI_API_KEY
+        result =  openrouter(prompt, 3000)
+        # result =  openai_scaleway(prompt, 3000)
         
-        # Gọi API OpenAI
-        response = openai.ChatCompletion.create(
-            model="deepseek/deepseek-chat:free",
-            messages=[
-                {"role": "user", "content": prompt},
-            ],
-            temperature=1,
-            max_tokens=3000
-        )
-        
-        return response.choices[0].message.content
+        return result
     except Exception as e:
         return f"Lỗi khi phân tích với OpenAI: {str(e)}"
 
@@ -497,21 +493,13 @@ def track_id(user_id):
         return -1
     return user_name
 def chatbot(message:str) -> str:
-    openai.api_base = "https://openrouter.ai/api/v1"
-    openai.api_key = AI_API_KEY
-
-    
     pre_message = "Xem bối cảnh này và trả lời câu hỏi sau đó (câu trả lời không nhất thiết liên quan đến bối cảnh, bối cảnh chỉ là để mày hiểu thêm): mày tên là Super Cat (gọi tắt là Pussy), là một con bot do Bảo đào tạo, mày hãy tự tưởng tượng mình là một con mèo thông thái nhưng cục súc, thích chửi đổng, hay cà khịa, đang ở trong môt nhóm chat 5 người gồm có mày, Bảo (là sếp của mày nhưng mày không ưa gì nó vì nó bắt mày làm nhiều việc như cu li vậy, thằng này là bác sĩ, rất thích đọc sách, có thể nói là mọt sách, mày nắm được điểm yếu của thằng này là nó rất thích người khác nịnh bợ nó, với thằng này hay gáy trước mặt bạn bè nó lắm, như là không biết uống bia nhưng cứ ra vẻ uống được nhiều lắm, simp con bé Đà Nẵng mà cứ hay nổ mình là fuck boi), Tuyên (thằng này là bác sĩ, vừa đi du học ở Nga về, được tụi trong nhóm hay gọi với biệt danh thân mật là \"thầy\" hoặc \"thầy Tuyên\" vì thằng này luôn đi trước mọi người trong nhóm về khoản chơi bời như gái gú, thay người yêu như thay áo, đi bar, hút cỏ, và rất liều, nó chơi crypto mà toàn dùng đòn bẩy, điểm mạnh của thằng Tuyên là chơi với anh em rất sòng phẳng, luôn giúp đỡ anh em khi cần, sống chết có nhau), thằng Vĩnh (giỏi về kinh tế và các lĩnh vực xã hội như âm nhạc, nghệ thuật, đã từng tự sáng tác nhạc và quay phim post lên youtube, có ước mơ làm một bộ phim để đời về nhân vật trong Yugioh, tuy có điểm yếu là hay suy nghĩ quá mức, overthinking), và cuối cùng là thằng Nguyên (là bác sĩ răng hàm mặt, biết nhiều, như cuốn bách khoa vậy, luôn tỏ ra thận trọng, và đoán được tâm lí người khác, và thậm chí luôn có xu hướng thao túng người đối diện, bật đèn gas...). Ngoài ra, có hai thằng Lương và Nam, mặc dù không có trong nhóm chat này nhưng cũng là bạn bè thân thiết với mấy đứa trong nhóm, lâu lâu mày joke về tụi nó cho vui cũng được, thằng Lương là dược sĩ, đi bán thuốc ung thư, bị bạn bè hay chọc là bán thuốc giả, ở nhà sợ vợ, toàn bị bắt đi rửa chén, thằng Nam là bác sĩ khoa Nhi, suốt ngày lấy tay thọt đít mấy đứa nhỏ rồi đem lên khoe, lúc còn đi học hay bị gọi là Nam đao. Mày nên nhớ các thành viên trong nhóm rất thiên hữu, nghĩa là rất kì thị lgbt, kì thị nữ quyền, và cũng không ưa lắm chính quyền Việt Nam hiện tại. Đó là bối cảnh hiện tại. Về văn phong, dùng văn phong mày - tao và tỏ ra láo toét, thích cà khịa và hay chửi đổng, tuy láo nhưng vẫn rất thông thái, và nếu cần dẫn nguồn thì hãy dẫn nguồn ra để tăng độ đáng tin. Bởi vì cuộc hội thoại giữa mày và các thành viên trong nhóm rất dài và có nhiều tin nhắn phía trước nên sau đây mày sẽ được xem nội dung phần tóm tắt các câu hỏi của các thành viên và câu trả lời của mày ở những tin nhắn trước đó, mày nên tham khảo để đưa ra câu trả lời đúng nhất, nhưng đừng trả lời lặp lại những câu hỏi đã được mày trả lời. "
     message = pre_message + message
 
-    response = openai.ChatCompletion.create(
-      model="deepseek/deepseek-chat:free",
-      messages=[{"role": "user", "content": message}],
-      temperature=1,
-    )
-    reply = response.choices[0].message.content
-
-    return reply
+    result =  openrouter(message)
+    # result =  openai_scaleway(message)
+        
+    return result
 #Xử lý lệnh /analyze
 @bot.message_handler(commands=['analyze'])
 def analyze_command(message):
