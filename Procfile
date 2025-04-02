@@ -1,1 +1,1 @@
-web: gunicorn pussybot:app
+web: python pussybot.py

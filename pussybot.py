@@ -503,7 +503,8 @@ async def main():
     await application.bot.set_webhook(url=webhook_url)
     logger.info(f"Webhook set to {webhook_url}")
 
-    # Chạy bot với webhook
+    # Chạy bot với webhook, không dùng asyncio.run()
+    await application.initialize()  # Khởi tạo bot
     await application.run_webhook(
         listen="0.0.0.0",
         port=port,
@@ -512,4 +513,11 @@ async def main():
     )
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Lấy event loop hiện có thay vì tạo mới
+    loop = asyncio.get_event_loop()
+    if loop.is_running():
+        # Nếu loop đã chạy, dùng create_task để thêm main()
+        loop.create_task(main())
+    else:
+        # Nếu loop chưa chạy, chạy nó
+        loop.run_until_complete(main())
