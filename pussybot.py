@@ -753,27 +753,27 @@ def escape_markdown(text):
     return ''.join(f'\\{c}' if c in escape_chars else c for c in text)
 
 from flask import Flask, request
-
+import logging
 # Khởi tạo Flask app
 app = Flask(__name__)
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-
-# Route xử lý webhook
 @app.route(f'/{TELEGRAM_API_KEY}', methods=['POST'])
 def webhook():
-    # Xử lý dữ liệu JSON từ Telegram
-    json_string = request.get_json()
-    update = telebot.types.Update.de_json(json_string)
-    bot.process_new_updates([update])
+    logger.info(f"Webhook received request: {request.method} {request.url}")
+    json_string = request.get_json(silent=True)
+    if json_string:
+        logger.info(f"Received update: {json_string}")
+        update = telebot.types.Update.de_json(json_string)
+        if update:
+            bot.process_new_updates([update])
+            logger.info("Update processed successfully")
+        else:
+            logger.warning("No valid update found in request")
+    else:
+        logger.warning("No JSON data received")
     return 'OK', 200
-
-# Route để thiết lập webhook
-@app.route('/')
-def set_webhook():
-    webhook_url = f"https://pussychat.onrender.com/{TELEGRAM_API_KEY}"
-    bot.remove_webhook()  # Xóa webhook cũ nếu có
-    bot.set_webhook(url=webhook_url)
-    return "Webhook đã được thiết lập!", 200
 
 if __name__ == "__main__":
     # Thiết lập webhook một lần
