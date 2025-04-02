@@ -553,7 +553,7 @@ def run_bot_setup():
 
 if __name__ == "__main__":
     # Chạy setup_bot trong một thread riêng
-    bot_thread = threading.Thread(target=run_bot_setup, daemon=True)
+    bot_thread = threading.Thread(target=run_bot_setup, daemon=False)
     bot_thread.start()
 
     # Đợi một chút để bot khởi tạo
