@@ -775,7 +775,13 @@ def set_webhook():
     bot.set_webhook(url=webhook_url)
     return "Webhook đã được thiết lập!", 200
 
-# Chạy Flask app
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 5000))  # Render cung cấp PORT
+    # Thiết lập webhook một lần
+    webhook_url = f"https://pussychat.onrender.com/{TELEGRAM_API_KEY}"
+    bot.remove_webhook()  # Xóa webhook cũ
+    bot.set_webhook(url=webhook_url)
+    print(f"Webhook set to: {webhook_url}")
+
+    # Chạy Flask app
+    port = int(os.getenv("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
