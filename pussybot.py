@@ -1,5 +1,5 @@
 import asyncio
-import signal
+import threading
 from contextlib import contextmanager
 import requests
 from bs4 import BeautifulSoup
@@ -484,11 +484,16 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 from flask import Flask, request
+
 app = Flask(__name__)
+
+# Biến toàn cục để lưu application và event loop
 bot_application = None
+loop = None
 
 async def setup_bot():
     global bot_application
+    logger.info("Starting bot setup...")
     bot_application = Application.builder().token(TELEGRAM_API_KEY).build()
 
     # Đăng ký các handler
@@ -510,26 +515,51 @@ async def setup_bot():
     # Khởi tạo và chạy bot
     await bot_application.initialize()
     await bot_application.start()
+    logger.info("Bot initialized and started successfully")
 
     return bot_application
 
 @app.route('/webhook', methods=['POST'])
-async def webhook():
-    global bot_application
-    if bot_application:
-        update = Update.de_json(request.get_json(force=True), bot_application.bot)
-        await bot_application.process_update(update)
+def webhook():
+    global bot_application, loop
+    if bot_application is None:
+        logger.error("Bot application not initialized!")
+        return '', 500
+
+    # Lấy dữ liệu từ request
+    data = request.get_json(force=True)
+    if not data:
+        logger.error("No data received in webhook!")
+        return '', 400
+
+    logger.info(f"Received webhook data: {data}")
+
+    # Chạy process_update trong event loop
+    asyncio.run_coroutine_threadsafe(bot_application.process_update(Update.de_json(data, bot_application.bot)), loop)
     return '', 200
 
 @app.route('/')
 def health_check():
+    logger.info("Health check requested")
     return "Bot is running", 200
 
-if __name__ == "__main__":
-    # Chạy setup_bot trong event loop
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(setup_bot())
+def run_bot_setup():
+    global bot_application, loop
+    logger.info("Starting bot thread...")
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    bot_application = loop.run_until_complete(setup_bot())
+    loop.run_forever()
 
-    # Chạy Flask app với Gunicorn
-    port = int(os.environ.get("PORT", 8443))
+if __name__ == "__main__":
+    # Chạy setup_bot trong một thread riêng
+    bot_thread = threading.Thread(target=run_bot_setup, daemon=True)
+    bot_thread.start()
+
+    # Đợi một chút để bot khởi tạo
+    time.sleep(5)
+
+    # Chạy Flask app với port từ env
+    port = int(os.environ.get("PORT", 8000))  # Dùng 8000 nếu PORT không set
+    logger.info(f"Starting Flask on port {port}")
     app.run(host="0.0.0.0", port=port)
