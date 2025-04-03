@@ -508,7 +508,8 @@ async def setup_bot():
     bot_application.add_handler(CommandHandler("news", news))
 
     # Cấu hình webhook
-    webhook_url = "https://pussychat.onrender.com/webhook"
+    webhook_url = "https://76d4-89-39-104-173.ngrok-free.app/webhook"
+    # webhook_url = "https://pussychat.onrender.com/webhook"
     await bot_application.bot.set_webhook(url=webhook_url)
     logger.info(f"Webhook set to {webhook_url}")
 
@@ -556,10 +557,7 @@ if __name__ == "__main__":
     bot_thread = threading.Thread(target=run_bot_setup, daemon=True)
     bot_thread.start()
 
-    # Đợi một chút để bot khởi tạo
-    time.sleep(5)
-
     # Chạy Flask app với port từ env
-    port = int(os.environ.get("PORT", 10000))  # Dùng 8000 nếu PORT không set
+    port = int(os.environ.get("PORT", 10000)) 
     logger.info(f"Starting Flask on port {port}")
     app.run(host="0.0.0.0", port=port)
