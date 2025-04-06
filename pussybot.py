@@ -301,8 +301,9 @@ def track_id(user_id):
 async def chatbot(message: str, group_id, user_id):
     chat_history = ChatHistory()
     chat_history.add_system_message(general_prompt)
+    user_name = track_id(user_id)
     history = await conversation_manager.get_conversation_context(group_id, user_id)
-    chat_history.add_user_message(history + f"Kết thúc phần lịch sử trò chuyện. Bây giờ hãy trả lời: {message}")
+    chat_history.add_user_message(history + f"Kết thúc phần lịch sử trò chuyện. Bây giờ hãy trả lời câu hỏi của {user_name}: {message}")
     response = await chat_service.get_chat_message_content(chat_history, execution_settings)
     return str(response)
 
