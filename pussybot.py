@@ -501,8 +501,8 @@ async def setup_bot():
     bot_application.add_handler(CommandHandler("news", news))
     bot_application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    webhook_url = "https://594e-89-39-104-173.ngrok-free.app/webhook"
-    # webhook_url = "https://pussychat.onrender.com/webhook"
+    # webhook_url = "https://594e-89-39-104-173.ngrok-free.app/webhook"
+    webhook_url = "https://pussychat.onrender.com/webhook"
     await bot_application.bot.set_webhook(url=webhook_url)
     logger.info(f"Webhook set to {webhook_url}")
 
