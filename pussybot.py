@@ -87,11 +87,12 @@ class GroupConversationManager:
         
         # Thêm tin nhắn
         self.group_histories[group_id].add_user_message(f"Đây là câu hỏi của {user_name}: {message_text}")
-        self.group_histories[group_id].add_assistant_message(f"Đây là câu trả lời của chatbot: {response}")
+        self.group_histories[group_id].add_assistant_message(f"Đây là câu trả lời của Pussy: {response}")
         
         # Tóm tắt nếu vượt quá giới hạn
         if len(self.group_histories[group_id]) > self.max_messages * 2:  # Mỗi tin nhắn có user + assistant
-            await self._summarize_conversation(group_id)
+            summary = self._summarize_conversation(group_id)
+            # sửa lại sau
     
     async def _summarize_conversation(self, group_id):
         history = self.group_histories[group_id]
@@ -99,12 +100,11 @@ class GroupConversationManager:
         conversation_text = "\n".join(messages)
         
         summary_history = ChatHistory()
-        summary_history.add_system_message("Mày là một con mèo thông thái nhưng cục súc, nhiệm vụ chính là thu thập và kiếm chứng thông tin.")
+        summary_history.add_system_message("Mày là một con mèo thông thái và là trợ lí tổng hợp, tóm tắt thông tin.")
         summary_history.add_user_message(f"Hãy tóm tắt ngắn gọn cuộc trò chuyện sau, bảo toàn ý chính và thông tin quan trọng (không quá 3 câu):\n{conversation_text}")
         
         summary = await chat_service.get_chat_message_content(summary_history, execution_settings)
-        self.group_histories[group_id] = ChatHistory(history[self.summary_threshold * 2:])
-        return str(summary)
+        return summary
     
     async def get_conversation_context(self, group_id, user_id):
         user_name = track_id(user_id)
@@ -501,7 +501,8 @@ async def setup_bot():
     bot_application.add_handler(CommandHandler("news", news))
     bot_application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    webhook_url = "https://pussychat.onrender.com/webhook"
+    webhook_url = "https://594e-89-39-104-173.ngrok-free.app/webhook"
+    # webhook_url = "https://pussychat.onrender.com/webhook"
     await bot_application.bot.set_webhook(url=webhook_url)
     logger.info(f"Webhook set to {webhook_url}")
 
