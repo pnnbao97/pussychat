@@ -457,9 +457,7 @@ async def macro(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Định dạng phản hồi dữ liệu
     response_text = (
         "📊 **CHỈ SỐ KINH TẾ VĨ MÔ TỪ FRED** - Dữ liệu mới nhất:\n\n" +
-        "\n".join(macro_data) +
-        "\n\nLưu ý: Cần FRED API key trong .env, không có thì đéo lấy được đâu tml!"
-    )
+        "\n".join(macro_data))
     await update.message.reply_text(response_text)
     
     # Phân tích bằng DeepSeek
