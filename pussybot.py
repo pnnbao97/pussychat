@@ -463,7 +463,7 @@ async def macro(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(response_text)
     
     # Phân tích bằng DeepSeek
-    await update.message.reply_text("Đợi tí tao phân tích đống này bằng DeepSeek...")
+    await update.message.reply_text("Mấy tml trong nhóm ngồi im nghe tao phân tích")
     analysis_prompt = (
         "Mày là một trợ lý phân tích kinh tế vĩ mô, láo toét nhưng sắc bén. "
         "Dựa trên các chỉ số kinh tế sau từ FRED, hãy phân tích tình hình kinh tế hiện tại "
@@ -479,7 +479,7 @@ async def macro(update: Update, context: ContextTypes.DEFAULT_TYPE):
     analysis = await chat_service.get_chat_message_content(chat_history, execution_settings)
     await conversation_manager.add_message(group_id, user_id, user_name, f"Phân tích các chỉ số kinh tế, cập nhật {today}", analysis)
     
-    await update.message.reply_text(f"**Phân tích từ Pussy (DeepSeek)**:\n{str(analysis)}")
+    await update.message.reply_text(analysis)
 # Hàm tạo meme từ ảnh người dùng
 async def create_meme_from_image(image_url, text):
     try:
@@ -769,6 +769,9 @@ async def crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Nhập tên coin đi tml, ví dụ: /crypto bitcoin")
         return
     
+    user_id = update.message.from_user.id
+    group_id = update.message.chat_id
+    user_name = track_id(user_id)
     # Gọi API CoinGecko với thông tin chi tiết
     url = f"{COINGECKO_API}/coins/{coin}?localization=false&tickers=false&market_data=true&community_data=false&developer_data=false&sparkline=false"
     response = requests.get(url)
@@ -778,6 +781,7 @@ async def crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Đéo tìm thấy coin '{coin}' nào cả! Check lại tên coin đi tml.")
         return
     
+    today = datetime.now().strftime("%d/%m/%Y")
     # Lấy các thông tin từ CoinGecko
     market_data = data["market_data"]
     price = market_data["current_price"]["usd"]
@@ -814,6 +818,7 @@ async def crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     
     await update.message.reply_text(response_text)
+    await conversation_manager.add_message(group_id, user_id, user_name, f"Tìm thông tin đồng coin, cập nhật {today}", response_text)
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_group_id(update, context):
