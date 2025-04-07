@@ -40,7 +40,7 @@ COINGECKO_API = "https://api.coingecko.com/api/v3"
 BINANCE_API = "https://api.binance.com/api/v3"
 
 # Chỉ cho phép hai nhóm với group_id này hoạt động
-ALLOWED_GROUP_ID = ""  # Thêm group_id chính của bạn vào đây
+ALLOWED_GROUP_ID = "-1002679588220"  # Thêm group_id chính của bạn vào đây
 ALLOWED_GROUP_ID_2 = ""  # Thêm group_id phụ của bạn vào đây
 
 # Khởi tạo Reddit client
@@ -453,10 +453,12 @@ def get_chunk(content, chunk_size=4096):
 
 # Middleware kiểm tra group_id
 async def check_group_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # chat_id = update.message.chat_id
-    # if chat_id not in [ALLOWED_GROUP_ID, ALLOWED_GROUP_ID_2]:
-    #     await update.message.reply_text("Đm mày ở nhóm nào mà đòi xài tao? Chỉ nhóm của thằng Bảo mới được thôi!")
-    #     return False
+    chat_id = str(update.message.chat_id)
+    user_id = update.message.from_user.id
+    if chat_id not in [ALLOWED_GROUP_ID, ALLOWED_GROUP_ID_2]:
+        if user_id != 6779771948: 
+            await update.message.reply_text("Đm mày ở nhóm nào mà đòi xài tao? Chỉ nhóm của thằng Bảo mới được thôi!")
+            return False
     return True
 
 # Handler cho các lệnh
@@ -677,8 +679,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if update.message.text:
         text = update.message.text
-    else:
+    elif update.messages.caption:
         text = update.message.caption
+    else: 
+        return
     user_id = update.message.from_user.id
     group_id = update.message.chat_id
     user_name = track_id(user_id)
