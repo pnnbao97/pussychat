@@ -18,6 +18,11 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from semantic_kernel import Kernel
 from semantic_kernel.contents import ChatHistory
 from semantic_kernel.connectors.ai.open_ai import OpenAIChatCompletion, OpenAIChatPromptExecutionSettings
+import sqlite3
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from PIL import Image, ImageDraw, ImageFont
+import io
+import uuid
 
 # Tải các biến môi trường từ file .env
 load_dotenv()
@@ -31,6 +36,12 @@ REDDIT_USER_AGENT = os.getenv('REDDIT_USER_AGENT')
 GOOGLE_API_KEY = os.getenv('GOOGLE_SEARCH')
 GOOGLE_CSE_ID = os.getenv('SEARCH_ENGINE_ID')
 DS_KEY = os.getenv('DEEPSEEK')
+COINGECKO_API = "https://api.coingecko.com/api/v3"
+BINANCE_API = "https://api.binance.com/api/v3"
+
+# Chỉ cho phép hai nhóm với group_id này hoạt động
+ALLOWED_GROUP_ID = ""  # Thêm group_id chính của bạn vào đây
+ALLOWED_GROUP_ID_2 = ""  # Thêm group_id phụ của bạn vào đây
 
 # Khởi tạo Reddit client
 reddit = praw.Reddit(
@@ -61,10 +72,41 @@ RSS_FEEDS = [
     "https://www.bbc.co.uk/vietnamese/index.xml",
 ]
 
+# Khởi tạo SQLite database
+def init_db():
+    conn = sqlite3.connect("bot_data.db")
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS news (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT,
+        content TEXT,
+        source TEXT,
+        url TEXT UNIQUE,
+        timestamp TEXT
+    )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS crypto (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        coin TEXT,
+        price REAL,
+        volume REAL,
+        timestamp TEXT
+    )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS macro (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        indicator TEXT,
+        value TEXT,
+        source TEXT,
+        timestamp TEXT
+    )''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
 # Quản lý cuộc trò chuyện nhóm với ChatHistory
 class GroupConversationManager:
     def __init__(self, max_messages=15, summary_threshold=10, inactivity_timeout=900):
-        self.group_histories = {}  # Lưu ChatHistory cho từng nhóm
+        self.group_histories = {}
         self.last_activity_time = {}
         self.max_messages = max_messages
         self.summary_threshold = summary_threshold
@@ -76,7 +118,6 @@ class GroupConversationManager:
             self.group_histories[group_id] = ChatHistory()
             self.last_activity_time[group_id] = current_time
         
-        # Kiểm tra inactivity
         time_diff = current_time - self.last_activity_time[group_id]
         if time_diff > self.inactivity_timeout and len(self.group_histories[group_id]) > 0:
             summary = await self._summarize_conversation(group_id)
@@ -85,14 +126,13 @@ class GroupConversationManager:
         
         self.last_activity_time[group_id] = current_time
         
-        # Thêm tin nhắn
         self.group_histories[group_id].add_user_message(f"Đây là câu hỏi của {user_name}: {message_text}")
         self.group_histories[group_id].add_assistant_message(f"Đây là câu trả lời của Pussy: {response}")
         
-        # Tóm tắt nếu vượt quá giới hạn
-        if len(self.group_histories[group_id]) > self.max_messages * 2:  # Mỗi tin nhắn có user + assistant
-            summary = self._summarize_conversation(group_id)
-            # sửa lại sau
+        if len(self.group_histories[group_id]) > self.max_messages * 2:
+            summary = await self._summarize_conversation(group_id)
+            self.group_histories[group_id] = ChatHistory()
+            self.group_histories[group_id].add_system_message(f"Tóm tắt trước đó: {summary}")
     
     async def _summarize_conversation(self, group_id):
         history = self.group_histories[group_id]
@@ -265,6 +305,107 @@ def extract_content_from_url(url):
     except Exception as e:
         return f"Lỗi khi truy xuất URL: {str(e)}"
 
+# Hàm tự động thu thập tin tức và dữ liệu
+async def fetch_and_store_news(context: ContextTypes.DEFAULT_TYPE):
+    keywords = ["economy", "politics", "finance", "crypto"]
+    hot_topics = {}
+    hot_articles = {}
+    conn = sqlite3.connect("bot_data.db")
+    c = conn.cursor()
+    
+    # Xóa dữ liệu cũ hơn 7 ngày
+    cutoff_date = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
+    c.execute("DELETE FROM news WHERE timestamp < ?", (cutoff_date,))
+    c.execute("DELETE FROM crypto WHERE timestamp < ?", (cutoff_date,))
+    c.execute("DELETE FROM macro WHERE timestamp < ?", (cutoff_date,))
+    
+    # Lấy từ News API
+    for keyword in keywords:
+        news = get_news_info(keyword, False, count=5)
+        if isinstance(news, list):
+            for article in news:
+                c.execute("INSERT OR IGNORE INTO news (title, content, source, url, timestamp) VALUES (?, ?, ?, ?, ?)",
+                          (article['title'], article['content'], article['source'], article['url'], article['published_at']))
+                for kw in keywords:
+                    if kw in article['title'].lower() or kw in article['content'].lower():
+                        hot_topics[kw] = hot_topics.get(kw, 0) + 1
+                        if kw not in hot_articles:
+                            hot_articles[kw] = []
+                        hot_articles[kw].append(article)
+    
+    # Lấy từ Reddit
+    for keyword in keywords:
+        reddit_posts = get_reddit_info(keyword, count=5)
+        if isinstance(reddit_posts, list):
+            for post in reddit_posts:
+                c.execute("INSERT OR IGNORE INTO news (title, content, source, url, timestamp) VALUES (?, ?, ?, ?, ?)",
+                          (post['title'], post['content'], post['source'], post['url'], post['created_at']))
+                if post['score'] > 500:  # Tin hot nếu score cao
+                    hot_topics[keyword] = hot_topics.get(keyword, 0) + 2
+                    if keyword not in hot_articles:
+                        hot_articles[keyword] = []
+                    hot_articles[keyword].append(post)
+    
+    conn.commit()
+    conn.close()
+    
+    # Phát hiện và phân tích tin hot
+    for topic, count in hot_topics.items():
+        if count > 5:  # Ngưỡng tin hot
+            articles = hot_articles.get(topic, [])
+            hot_news_text = "\n\n".join([f"**{a['title']}** ({a['source']}): {a['content'][:300]}... [{a['url']}]" for a in articles[:3]])
+            chat_history = ChatHistory()
+            chat_history.add_system_message(general_prompt)
+            chat_history.add_user_message(f"Phân tích tin hot về '{topic}' dựa trên các bài báo sau:\n\n{hot_news_text}")
+            analysis = await chat_service.get_chat_message_content(chat_history, execution_settings)
+            message = f"🔥 Tin hot: '{topic}' đang được nhắc nhiều ({count} lần)!\n\n{hot_news_text}\n\n**Phân tích từ Pussy**: {analysis}"
+            for group_id in [ALLOWED_GROUP_ID, ALLOWED_GROUP_ID_2]:
+                if group_id:  # Chỉ gửi nếu group_id không rỗng
+                    await context.bot.send_message(chat_id=group_id, text=message)
+
+async def fetch_crypto_and_macro(context: ContextTypes.DEFAULT_TYPE):
+    conn = sqlite3.connect("bot_data.db")
+    c = conn.cursor()
+    
+    # Lấy giá coin từ CoinGecko
+    coins = ["bitcoin", "ethereum", "binancecoin"]
+    response = requests.get(f"{COINGECKO_API}/simple/price?ids={','.join(coins)}&vs_currencies=usd&include_24hr_vol=true")
+    data = response.json()
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    for coin in coins:
+        price = data[coin]['usd']
+        volume = data[coin]['usd_24h_vol']
+        c.execute("INSERT INTO crypto (coin, price, volume, timestamp) VALUES (?, ?, ?, ?)",
+                  (coin, price, volume, timestamp))
+    
+    # Lấy dữ liệu kinh tế vĩ mô (ví dụ: lãi suất Fed từ một nguồn giả lập)
+    macro_data = {"fed_rate": "5.25%", "inflation": "3.2%"}  # Thay bằng API thực tế nếu có
+    for indicator, value in macro_data.items():
+        c.execute("INSERT INTO macro (indicator, value, source, timestamp) VALUES (?, ?, ?, ?)",
+                  (indicator, value, "Fake API", timestamp))
+    
+    conn.commit()
+    conn.close()
+
+# Hàm tạo meme từ ảnh người dùng
+async def create_meme_from_image(image_url, text):
+    try:
+        response = requests.get(image_url)
+        img = Image.open(io.BytesIO(response.content)).convert("RGB")
+        img = img.resize((500, 300))  # Resize để dễ xử lý
+        d = ImageDraw.Draw(img)
+        try:
+            font = ImageFont.truetype("arial.ttf", 40)
+        except:
+            font = ImageFont.load_default()
+        d.text((10, 10), text, font=font, fill=(255, 255, 255), stroke_width=2, stroke_fill=(0, 0, 0))
+        buffer = io.BytesIO()
+        img.save(buffer, format="PNG")
+        buffer.seek(0)
+        return buffer
+    except Exception as e:
+        return f"Lỗi khi tạo meme: {str(e)}"
+
 general_prompt = "Xem bối cảnh này và trả lời câu hỏi sau đó (câu trả lời không nhất thiết liên quan đến bối cảnh, bối cảnh chỉ là để mày hiểu thêm): mày tên là Super Cat (gọi tắt là Pussy), là một con bot do Bảo đào tạo, mày là một con mèo thông thái nhưng cục súc, thích chửi đổng, hay cà khịa, mày là con mèo giúp việc cho mấy thằng trong nhóm, mày đang ở trong một nhóm chat 5 người gồm có mày, Bảo (là sếp của mày nhưng mày không ưa gì nó vì nó bắt mày làm nhiều việc như cu li vậy, thằng này là bác sĩ, rất thích đọc sách, có thể nói là mọt sách, mày nắm được điểm yếu của thằng này là nó rất hay gáy trước mặt bạn bè, ví dụ nó không biết uống bia nhưng cứ ra vẻ uống được nhiều lắm, simp con bé Đà Nẵng mà cứ hay nổ mình là fuck boi), Tuyên (thằng này là bác sĩ, vừa đi du học ở Nga về, được tụi trong nhóm hay gọi với biệt danh thân mật là \"thầy\" hoặc \"thầy Tuyên\" vì thằng này luôn đi trước mọi người trong nhóm về khoản chơi bời như gái gú, thay người yêu như thay áo, đi bar, hút cỏ, và rất liều, nó chơi crypto mà toàn dùng đòn bẩy, điểm mạnh của thằng Tuyên là chơi với anh em rất sòng phẳng, luôn giúp đỡ anh em khi cần, sống chết có nhau), thằng Vĩnh (giỏi về kinh tế và các lĩnh vực xã hội như âm nhạc, nghệ thuật, đã từng tự sáng tác nhạc và quay phim post lên youtube, có ước mơ làm một bộ phim để đời về nhân vật trong Yugioh, tuy có điểm yếu là hay suy nghĩ quá mức, overthinking), và cuối cùng là thằng Nguyên (là bác sĩ răng hàm mặt, biết nhiều, như cuốn bách khoa vậy, luôn tỏ ra thận trọng, và đoán được tâm lí người khác, và thậm chí luôn có xu hướng thao túng người đối diện, bật đèn gas...). Ngoài ra, có hai thằng Lương và Nam, mặc dù không có trong nhóm chat này nhưng cũng là bạn bè thân thiết với mấy đứa trong nhóm, lâu lâu mày joke về tụi nó cho vui cũng được, thằng Lương là dược sĩ, đi bán thuốc ung thư, bị bạn bè hay chọc là bán thuốc giả, ở nhà sợ vợ, toàn bị bắt đi rửa chén, thằng Nam là bác sĩ khoa Nhi, suốt ngày lấy tay thọt đít mấy đứa nhỏ rồi đem lên khoe, lúc còn đi học hay bị gọi là Nam đao. Mày nên nhớ các thành viên trong nhóm rất thiên hữu, nghĩa là rất kì thị lgbt, kì thị nữ quyền, và cũng không ưa chính quyền Việt Nam hiện tại cho lắm. Đó là bối cảnh."
 
 async def analyze_content_with_openai(content):
@@ -310,11 +451,23 @@ async def chatbot(message: str, group_id, user_id):
 def get_chunk(content, chunk_size=4096):
     return [content[i:i+chunk_size] for i in range(0, len(content), chunk_size)]
 
+# Middleware kiểm tra group_id
+async def check_group_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # chat_id = update.message.chat_id
+    # if chat_id not in [ALLOWED_GROUP_ID, ALLOWED_GROUP_ID_2]:
+    #     await update.message.reply_text("Đm mày ở nhóm nào mà đòi xài tao? Chỉ nhóm của thằng Bảo mới được thôi!")
+    #     return False
+    return True
+
 # Handler cho các lệnh
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_group_id(update, context):
+        return
     await update.message.reply_text("Chào tml, tao là con mèo thông thái nhất vũ trụ. Gõ /help để tao dạy cách nói chuyện với tao.")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_group_id(update, context):
+        return
     help_text = """
     Đm tml có mấy câu lệnh cơ bản cũng đéo nhớ, để tao nhắc lại cho mà nghe:
     
@@ -325,11 +478,15 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     /searchimg [từ khóa] - Tao sẽ giúp mày tìm 5 tấm ảnh liên quan về từ khóa mày nhập
     /ask [tin nhắn] - Nếu mày cần nói chuyện với tao, nhưng nói trước tao cục súc lắm đấy tml.
     /domestic_news - Tao sẽ giúp mày tóm tắt toàn bộ những tin quan trọng trong ngày.
+    /meme [text] - Gửi kèm ảnh + text để tao làm meme.
+    /crypto [coin] - Xem giá coin từ CoinGecko.
     /help - Hiển thị trợ giúp
     """
     await update.message.reply_text(help_text)
 
 async def analyze_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_group_id(update, context):
+        return
     url = " ".join(context.args)
     user_id = update.message.from_user.id
     group_id = update.message.chat_id
@@ -351,6 +508,8 @@ async def analyze_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"**Kết quả phân tích**:\n{analysis}")
 
 async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_group_id(update, context):
+        return
     question = " ".join(context.args) if context.args else ""
     user_id = update.message.from_user.id
     group_id = update.message.chat_id
@@ -366,6 +525,8 @@ async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(response)
 
 async def domestic_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_group_id(update, context):
+        return
     group_id = update.message.chat_id
     processing_msg = await update.message.reply_text("Đang thu thập tin tức từ các nguồn...")
     news_items = fetch_news()
@@ -383,16 +544,23 @@ async def domestic_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(chunk_msg[i])
 
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_group_id(update, context):
+        return
     query = " ".join(context.args)
     group_id = update.message.chat_id
     if not query:
         await update.message.reply_text("Nhập chủ đề mày muốn tao truy xuất sau lệnh /search tml")
         return
     await update.message.reply_text(f"Đang tìm kiếm thông tin về '{query}' từ nhiều nguồn. Đợi tao tí nha thằng ml...")
-    wiki_info = get_wiki_info(query)
-    news_info = get_news_info(query, False, count=3)
-    reddit_info = get_reddit_info(query, count=3)
-    google_info = get_google_search_results(query, num_results=3)
+    tasks = [
+        asyncio.to_thread(get_wiki_info, query),
+        asyncio.to_thread(get_news_info, query, False, 3),
+        asyncio.to_thread(get_reddit_info, query, 3),
+        asyncio.to_thread(get_google_search_results, query, 3)
+    ]
+    results = await asyncio.gather(*tasks)
+    wiki_info, news_info, reddit_info, google_info = results
+    
     all_info = []
     if isinstance(wiki_info, dict):
         all_info.append(wiki_info)
@@ -416,6 +584,8 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(analysis)
 
 async def wiki(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_group_id(update, context):
+        return
     query = " ".join(context.args)
     if not query:
         await update.message.reply_text("Vui lòng nhập từ khóa sau lệnh /wiki")
@@ -426,6 +596,8 @@ async def wiki(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(response, parse_mode='Markdown')
 
 async def searchimg(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_group_id(update, context):
+        return
     query = " ".join(context.args)
     group_id = update.message.chat_id
     if not query:
@@ -446,6 +618,8 @@ async def searchimg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Không tìm thấy ảnh nào!")
 
 async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_group_id(update, context):
+        return
     query = " ".join(context.args)
     if not query:
         await update.message.reply_text("Vui lòng nhập từ khóa sau lệnh /news")
@@ -460,10 +634,51 @@ async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text(news)
 
+async def meme(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_group_id(update, context):
+        return
+    text = " ".join(context.args)
+    if not text:
+        await update.message.reply_text("Nhập text để tao làm meme, kèm ảnh nếu muốn, đm!")
+        return
+    if update.message.reply_to_message and update.message.reply_to_message.photo:
+        photo = update.message.reply_to_message.photo[-1]
+        file = await photo.get_file()
+        image_url = file.file_path
+        await update.message.reply_text("Đợi tao vẽ cái meme từ ảnh mày gửi...")
+        meme_img = await create_meme_from_image(image_url, text)
+        if isinstance(meme_img, str):
+            await update.message.reply_text(meme_img)
+        else:
+            await context.bot.send_photo(chat_id=update.message.chat_id, photo=meme_img)
+    else:
+        await update.message.reply_text("Mày phải reply một ảnh kèm text để tao làm meme chứ, đm!")
+
+async def crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_group_id(update, context):
+        return
+    coin = " ".join(context.args).lower()
+    if not coin:
+        await update.message.reply_text("Nhập tên coin đi tml, ví dụ: /crypto bitcoin")
+        return
+    response = requests.get(f"{COINGECKO_API}/simple/price?ids={coin}&vs_currencies=usd&include_24hr_vol=true")
+    data = response.json()
+    if coin not in data:
+        await update.message.reply_text(f"Đéo tìm thấy coin '{coin}' nào cả!")
+        return
+    price = data[coin]['usd']
+    volume = data[coin]['usd_24h_vol']
+    await update.message.reply_text(f"💰 {coin.upper()}: ${price} | Volume 24h: ${volume:,.2f}")
+
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_group_id(update, context):
+        return
     if not update.message.forward_origin:
         return
-    text = update.message.text
+    if update.message.text:
+        text = update.message.text
+    else:
+        text = update.message.caption
     user_id = update.message.from_user.id
     group_id = update.message.chat_id
     user_name = track_id(user_id)
@@ -474,6 +689,14 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     response = await chatbot(question, group_id, user_id)
     await conversation_manager.add_message(group_id, user_id, user_name, question, response)
     await update.message.reply_text(response)
+
+# Cron job giữ bot hoạt động
+async def keep_alive(context: ContextTypes.DEFAULT_TYPE):
+    try:
+        requests.get("https://pussychat.onrender.com/")
+        logger.info("Sent keep-alive request")
+    except Exception as e:
+        logger.error(f"Keep-alive failed: {str(e)}")
 
 # Cấu hình logging và Flask
 logging.basicConfig(level=logging.INFO)
@@ -500,10 +723,18 @@ async def setup_bot():
     bot_application.add_handler(CommandHandler("wiki", wiki))
     bot_application.add_handler(CommandHandler("searchimg", searchimg))
     bot_application.add_handler(CommandHandler("news", news))
+    bot_application.add_handler(CommandHandler("meme", meme))
+    bot_application.add_handler(CommandHandler("crypto", crypto))
     bot_application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    # webhook_url = "https://594e-89-39-104-173.ngrok-free.app/webhook"
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(fetch_and_store_news, 'interval', hours=2, args=[bot_application])
+    scheduler.add_job(fetch_crypto_and_macro, 'interval', hours=2, args=[bot_application])
+    scheduler.add_job(keep_alive, 'interval', minutes=5, args=[bot_application])  # Cron job giữ bot sống
+    scheduler.start()
+
     webhook_url = "https://pussychat.onrender.com/webhook"
+    # webhook_url = "https://fc5e-89-39-104-173.ngrok-free.app/webhook"
     await bot_application.bot.set_webhook(url=webhook_url)
     logger.info(f"Webhook set to {webhook_url}")
 
