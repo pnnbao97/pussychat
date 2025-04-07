@@ -136,7 +136,7 @@ class GroupConversationManager:
     
     async def _summarize_conversation(self, group_id):
         history = self.group_histories[group_id]
-        messages = [f"{msg.role}: {msg.content}" for msg in history[:self.summary_threshold * 2]]
+        messages = [f"{msg.role}: {msg.content}" for msg in history[:self.max_messages * 2]]
         conversation_text = "\n".join(messages)
         
         summary_history = ChatHistory()
@@ -362,8 +362,10 @@ async def fetch_and_store_news(context: ContextTypes.DEFAULT_TYPE):
             for group_id in [ALLOWED_GROUP_ID, ALLOWED_GROUP_ID_2]:
                 if group_id:  # Chỉ gửi nếu group_id không rỗng
                     await context.bot.send_message(chat_id=group_id, text=message)
+                    await conversation_manager.add_message(group_id, "", "", "Tin hot đang được bàn nhiều", message)
 
 async def fetch_crypto_and_macro(context: ContextTypes.DEFAULT_TYPE):
+    logger.info("Running fetch_crypto_and_macro job")
     conn = sqlite3.connect("bot_data.db")
     c = conn.cursor()
     
@@ -378,15 +380,106 @@ async def fetch_crypto_and_macro(context: ContextTypes.DEFAULT_TYPE):
         c.execute("INSERT INTO crypto (coin, price, volume, timestamp) VALUES (?, ?, ?, ?)",
                   (coin, price, volume, timestamp))
     
-    # Lấy dữ liệu kinh tế vĩ mô (ví dụ: lãi suất Fed từ một nguồn giả lập)
-    macro_data = {"fed_rate": "5.25%", "inflation": "3.2%"}  # Thay bằng API thực tế nếu có
-    for indicator, value in macro_data.items():
-        c.execute("INSERT INTO macro (indicator, value, source, timestamp) VALUES (?, ?, ?, ?)",
-                  (indicator, value, "Fake API", timestamp))
+    # Lấy dữ liệu kinh tế vĩ mô từ FRED
+    macro_indicators = [
+        ("FEDFUNDS", "fed_rate", "Lãi suất Fed (%)"),
+        ("CPIAUCSL", "cpi", "Chỉ số giá tiêu dùng (CPI)"),
+        ("UNRATE", "unemployment_rate", "Tỷ lệ thất nghiệp (%)")
+    ]
+    
+    for series_id, indicator, name in macro_indicators:
+        text, value, date = get_fred_data(series_id, name)
+        if value is not None:
+            c.execute("INSERT INTO macro (indicator, value, source, timestamp) VALUES (?, ?, ?, ?)",
+                      (indicator, value, "FRED", date if date else timestamp))
+        else:
+            logger.warning(f"Không lấy được dữ liệu cho {indicator}: {text}")
     
     conn.commit()
     conn.close()
 
+def get_fred_data(series_id, name, icon=None):
+    FRED_API_KEY = os.getenv("FRED_API")  # Lấy từ .env
+    FRED_BASE_URL = "https://api.stlouisfed.org/fred/series/observations"
+    try:
+        params = {
+            "series_id": series_id,
+            "api_key": FRED_API_KEY,
+            "file_type": "json",
+            "limit": 1,  # Lấy giá trị mới nhất
+            "sort_order": "desc"
+        }
+        response = requests.get(FRED_BASE_URL, params=params)
+        data = response.json()
+        if "observations" in data and data["observations"]:
+            value = data["observations"][0]["value"]
+            date = data["observations"][0]["date"]
+            if icon:
+                return f"{icon} {name}: {value} (Cập nhật: {date})", value, date
+            return f"{name}: {value} (Cập nhật: {date})", value, date
+        return f"{icon} {name}: Không lấy được dữ liệu từ FRED!" if icon else f"{name}: Không lấy được dữ liệu từ FRED!", None, None
+    except Exception as e:
+        return f"{icon} {name}: Lỗi - {str(e)}" if icon else f"{name}: Lỗi - {str(e)}", None, None
+async def macro(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_group_id(update, context):
+        return
+    
+    user_id = update.message.from_user.id
+    group_id = update.message.chat_id
+    user_name = track_id(user_id)
+    await update.message.reply_text("Đợi tao moi dữ liệu kinh tế vĩ mô từ FRED, tml đừng hối!")
+    
+    # Lấy dữ liệu từ FRED với icon
+    macro_data = []
+    macro_values = {}  # Lưu giá trị để phân tích
+    
+    indicators = [
+        ("GDPC1", "GDP thực tế (tỷ USD)", "📈"),
+        ("CPIAUCSL", "Chỉ số giá tiêu dùng (CPI)", "💸"),
+        ("FEDFUNDS", "Lãi suất Fed (%)", "🏦"),
+        ("UNRATE", "Tỷ lệ thất nghiệp (%)", "👷‍♂️"),
+        ("PAYEMS", "Bảng lương phi nông nghiệp (nghìn người)", "💼"),
+        ("RSAFS", "Doanh số bán lẻ (triệu USD)", "🛒"),
+        ("INDPRO", "Sản xuất công nghiệp", "🏭"),
+        ("CPILFESL", "Lạm phát lõi (Core CPI)", "🔥"),
+        ("DGS10", "Lợi suất trái phiếu 10 năm (%)", "📜"),
+        ("BOPGSTB", "Cán cân thương mại (triệu USD)", "⚖️"),
+        ("UMCSENT", "Niềm tin tiêu dùng", "😊")
+    ]
+    
+    today = datetime.now().strftime("%d/%m/%Y")
+    for series_id, name, icon in indicators:
+        text, value, date = get_fred_data(series_id, name, icon)
+        macro_data.append(text)
+        if value is not None:
+            macro_values[name] = {"value": value, "date": date}
+    
+    # Định dạng phản hồi dữ liệu
+    response_text = (
+        "📊 **CHỈ SỐ KINH TẾ VĨ MÔ TỪ FRED** - Dữ liệu mới nhất:\n\n" +
+        "\n".join(macro_data) +
+        "\n\nLưu ý: Cần FRED API key trong .env, không có thì đéo lấy được đâu tml!"
+    )
+    await update.message.reply_text(response_text)
+    
+    # Phân tích bằng DeepSeek
+    await update.message.reply_text("Đợi tí tao phân tích đống này bằng DeepSeek...")
+    analysis_prompt = (
+        "Mày là một trợ lý phân tích kinh tế vĩ mô, láo toét nhưng sắc bén. "
+        "Dựa trên các chỉ số kinh tế sau từ FRED, hãy phân tích tình hình kinh tế hiện tại "
+        "và đưa ra nhận xét ngắn gọn (dưới 500 từ) về tác động đến thị trường tài chính, "
+        "bao gồm chứng khoán, USD, và crypto. Đây là dữ liệu:\n\n" +
+        "\n".join([f"{k}: {v['value']} (Cập nhật: {v['date']})" for k, v in macro_values.items()]) +
+        "\n\nPhân tích đi, đừng dài dòng!"
+    )
+    
+    chat_history = ChatHistory()
+    chat_history.add_system_message(general_prompt)
+    chat_history.add_user_message(analysis_prompt)
+    analysis = await chat_service.get_chat_message_content(chat_history, execution_settings)
+    await conversation_manager.add_message(group_id, user_id, user_name, f"Phân tích các chỉ số kinh tế, cập nhật {today}", analysis)
+    
+    await update.message.reply_text(f"**Phân tích từ Pussy (DeepSeek)**:\n{str(analysis)}")
 # Hàm tạo meme từ ảnh người dùng
 async def create_meme_from_image(image_url, text):
     try:
@@ -641,20 +734,32 @@ async def meme(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     text = " ".join(context.args)
     if not text:
-        await update.message.reply_text("Nhập text để tao làm meme, kèm ảnh nếu muốn, đm!")
+        await update.message.reply_text("Nhập text để tao làm meme, kèm ảnh bằng cách reply ảnh, đm!")
         return
-    if update.message.reply_to_message and update.message.reply_to_message.photo:
-        photo = update.message.reply_to_message.photo[-1]
-        file = await photo.get_file()
-        image_url = file.file_path
+    
+    # Kiểm tra xem tin nhắn có reply tới ảnh không
+    if not update.message.reply_to_message or not update.message.reply_to_message.photo:
+        await update.message.reply_text("Mày phải reply một ảnh kèm text để tao làm meme, đm! Gửi lại đi!")
+        return
+    
+    # Lấy ảnh từ tin nhắn reply
+    try:
+        photo = update.message.reply_to_message.photo[-1]  # Lấy ảnh chất lượng cao nhất
+        file = await photo.get_file()  # Lấy đối tượng file
+        image_url = file.file_path  # URL tải ảnh từ Telegram
+        logger.info(f"Received photo URL: {image_url}")
+        
         await update.message.reply_text("Đợi tao vẽ cái meme từ ảnh mày gửi...")
         meme_img = await create_meme_from_image(image_url, text)
+        
         if isinstance(meme_img, str):
-            await update.message.reply_text(meme_img)
+            await update.message.reply_text(meme_img)  # Trả về lỗi nếu có
         else:
             await context.bot.send_photo(chat_id=update.message.chat_id, photo=meme_img)
-    else:
-        await update.message.reply_text("Mày phải reply một ảnh kèm text để tao làm meme chứ, đm!")
+            logger.info("Meme sent successfully")
+    except Exception as e:
+        logger.error(f"Error in meme creation: {str(e)}")
+        await update.message.reply_text(f"Lỗi khi xử lý ảnh hoặc tạo meme: {str(e)}. Thử lại đi tml!")
 
 async def crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_group_id(update, context):
@@ -663,14 +768,52 @@ async def crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not coin:
         await update.message.reply_text("Nhập tên coin đi tml, ví dụ: /crypto bitcoin")
         return
-    response = requests.get(f"{COINGECKO_API}/simple/price?ids={coin}&vs_currencies=usd&include_24hr_vol=true")
+    
+    # Gọi API CoinGecko với thông tin chi tiết
+    url = f"{COINGECKO_API}/coins/{coin}?localization=false&tickers=false&market_data=true&community_data=false&developer_data=false&sparkline=false"
+    response = requests.get(url)
     data = response.json()
-    if coin not in data:
-        await update.message.reply_text(f"Đéo tìm thấy coin '{coin}' nào cả!")
+    
+    if "error" in data or "id" not in data:
+        await update.message.reply_text(f"Đéo tìm thấy coin '{coin}' nào cả! Check lại tên coin đi tml.")
         return
-    price = data[coin]['usd']
-    volume = data[coin]['usd_24h_vol']
-    await update.message.reply_text(f"💰 {coin.upper()}: ${price} | Volume 24h: ${volume:,.2f}")
+    
+    # Lấy các thông tin từ CoinGecko
+    market_data = data["market_data"]
+    price = market_data["current_price"]["usd"]
+    volume_24h = market_data["total_volume"]["usd"]
+    market_cap = market_data["market_cap"]["usd"]
+    price_change_24h = market_data["price_change_percentage_24h"]
+    high_24h = market_data["high_24h"]["usd"]
+    low_24h = market_data["low_24h"]["usd"]
+    last_updated = market_data["last_updated"]
+    
+    # Gọi API Greed and Fear từ Alternative.me
+    greed_fear_url = "https://api.alternative.me/fng/?limit=1"
+    greed_fear_response = requests.get(greed_fear_url)
+    greed_fear_data = greed_fear_response.json()
+    
+    if greed_fear_data and "data" in greed_fear_data and len(greed_fear_data["data"]) > 0:
+        greed_fear_value = greed_fear_data["data"][0]["value"]
+        greed_fear_classification = greed_fear_data["data"][0]["value_classification"]
+        greed_fear_timestamp = greed_fear_data["data"][0]["timestamp"]
+        greed_fear_text = f"😨 Chỉ số Sợ hãi & Tham lam (Greed/Fear): {greed_fear_value} - {greed_fear_classification} (Cập nhật: {datetime.fromtimestamp(int(greed_fear_timestamp)).strftime('%Y-%m-%d %H:%M:%S')})"
+    else:
+        greed_fear_text = "😨 Không lấy được chỉ số Sợ hãi & Tham lam, chắc API hỏng rồi tml!"
+    
+    # Định dạng phản hồi
+    response_text = (
+        f"💰 **{coin.upper()}** - Cập nhật lúc: {last_updated}\n"
+        f"📈 Giá hiện tại: ${price:,.2f}\n"
+        f"📊 Thay đổi 24h: {price_change_24h:.2f}%\n"
+        f"🔝 Cao nhất 24h: ${high_24h:,.2f}\n"
+        f"🔻 Thấp nhất 24h: ${low_24h:,.2f}\n"
+        f"💸 Vốn hóa thị trường: ${market_cap:,.0f}\n"
+        f"📉 Khối lượng giao dịch 24h: ${volume_24h:,.0f}\n"
+        f"{greed_fear_text}"
+    )
+    
+    await update.message.reply_text(response_text)
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_group_id(update, context):
@@ -729,6 +872,7 @@ async def setup_bot():
     bot_application.add_handler(CommandHandler("news", news))
     bot_application.add_handler(CommandHandler("meme", meme))
     bot_application.add_handler(CommandHandler("crypto", crypto))
+    bot_application.add_handler(CommandHandler("macro", macro))
     bot_application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
     scheduler = AsyncIOScheduler()
