@@ -475,7 +475,6 @@ async def macro(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_history.add_system_message(general_prompt)
     chat_history.add_user_message(analysis_prompt)
     analysis = await chat_service.get_chat_message_content(chat_history, execution_settings)
-    await conversation_manager.add_message(group_id, user_id, user_name, f"Phân tích các chỉ số kinh tế, cập nhật {today}", analysis)
     
     await update.message.reply_text(analysis)
 # Hàm tạo meme từ ảnh người dùng
