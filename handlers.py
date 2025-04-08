@@ -6,6 +6,7 @@ from conversation import conversation_manager
 from datetime import datetime
 import requests
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
