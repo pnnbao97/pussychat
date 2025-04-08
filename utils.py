@@ -1,4 +1,5 @@
 import io
+import requests
 from PIL import Image, ImageDraw, ImageFont
 from semantic_kernel.contents import ChatHistory
 from api import chat_service, execution_settings
