@@ -1,4 +1,5 @@
 from telegram import Update
+import asyncio
 from telegram.ext import CommandHandler, MessageHandler, filters, ContextTypes
 from api import fetch_news, summarize_news, get_wiki_info, get_news_info, get_reddit_info, get_google_search_results, extract_content_from_url, analyze_with_openai
 from utils import create_meme_from_image, track_id, get_chunk, check_group_id, analyze_content_with_openai, general_prompt, chatbot
@@ -7,6 +8,7 @@ from datetime import datetime
 import requests
 import logging
 import os
+from semantic_kernel.contents import ChatHistory
 
 logger = logging.getLogger(__name__)
 
