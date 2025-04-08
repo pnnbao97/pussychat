@@ -66,6 +66,16 @@ async def create_meme_from_image(image_url, text):
     except Exception as e:
         return f"Lỗi khi tạo meme: {str(e)}"
 
+def track_id(user_id):
+    if user_id == 6779771948:
+        return "Bảo"
+    elif user_id == 7652652250:
+        return "Tuyên"
+    elif user_id == 5066396885:
+        return "Nguyên"
+    else:
+        return -1
+
 def get_chunk(content, chunk_size=4096):
     return [content[i:i+chunk_size] for i in range(0, len(content), chunk_size)]
 
