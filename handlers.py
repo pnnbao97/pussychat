@@ -9,6 +9,8 @@ import requests
 import logging
 import os
 from semantic_kernel.contents import ChatHistory
+import random
+
 
 logger = logging.getLogger(__name__)
 
@@ -190,6 +192,56 @@ async def searchimg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Không tìm thấy ảnh nào!")
 
+async def meme_random(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_group_id(update, context):
+        return
+    
+    await update.message.reply_text("Đợi tao kiếm ảnh random làm meme...")
+    
+    # Danh sách từ khóa ngẫu nhiên
+    keywords = ["funny cat", "dumb face", "fail moment"]
+    query = random.choice(keywords)
+    user_id = update.message.from_user.id
+    user_name = track_id(user_id)
+    captions = {
+        "Bảo": "Khi thằng Bảo simp mà giả vờ fuck boi!",
+        "Tuyên": "Mặt thầy Tuyên lúc cháy acc crypto!",
+        "Vĩnh": "Vĩnh overthinking tới mức quên sống luôn!",
+        "Nguyên": "Nguyên bật đèn gas mà đéo ai sợ!"}
+    caption = captions.get(user_name, random.choice(captions.values())) if user_name != -1 else random.choice(captions.values())
+    # Gọi Google Custom Search API
+    url = f"https://www.googleapis.com/customsearch/v1?q={query}&key={GOOGLE_API_KEY}&cx={GOOGLE_CSE_ID}&searchType=image&num=5"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()  # Kiểm tra lỗi HTTP
+        data = response.json()
+        
+        if 'items' not in data or not data['items']:
+            await update.message.reply_text("Đéo tìm được ảnh nào, chắc hết quota Google rồi tml!")
+            return
+        
+        # Chọn ngẫu nhiên một ảnh từ 5 kết quả
+        image_url = random.choice(data['items'])['link']
+        
+        # Danh sách caption ngẫu nhiên
+        captions = [
+            "Khi mày nghĩ mình giỏi nhưng đéo ai công nhận!",
+            "Nhìn mặt mày lúc thua kèo crypto!",
+            "Tụi mày trong nhóm lúc hết tiền chơi bar!"
+        ]
+        caption = random.choice(captions)
+        
+        # Tạo meme
+        meme_img = await create_meme_from_image(image_url, caption)
+        if isinstance(meme_img, str):
+            await update.message.reply_text(meme_img)  # Nếu lỗi, trả về thông báo
+        else:
+            await context.bot.send_photo(chat_id=update.message.chat_id, photo=meme_img)
+    
+    except requests.RequestException as e:
+        await update.message.reply_text(f"Lỗi khi lấy ảnh: {str(e)}. Thử lại sau nha tml!")
+    except Exception as e:
+        await update.message.reply_text(f"Lỗi gì đó rồi: {str(e)}. Tao đéo biết fix sao luôn!")
 async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_group_id(update, context):
         return
