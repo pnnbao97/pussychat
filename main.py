@@ -32,8 +32,8 @@ async def setup_bot():
 
     # Thiết lập scheduler
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(fetch_and_store_news, 'interval', hours=6, args=[bot_application])
-    scheduler.add_job(fetch_crypto_and_macro, 'interval', hours=6, args=[bot_application])
+    scheduler.add_job(fetch_and_store_news, 'interval', hours=12, args=[bot_application])
+    scheduler.add_job(fetch_crypto_and_macro, 'interval', hours=12, args=[bot_application])
     scheduler.add_job(keep_alive, 'interval', minutes=5, args=[bot_application])
     scheduler.start()
 
