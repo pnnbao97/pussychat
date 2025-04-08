@@ -11,31 +11,60 @@ general_prompt = """Xem bối cảnh này và trả lời câu hỏi sau đó (c
 
 async def create_meme_from_image(image_url, text):
     try:
-        response = requests.get(image_url)
+        # Tải ảnh từ URL
+        response = requests.get(image_url, timeout=10)
+        response.raise_for_status()
         img = Image.open(io.BytesIO(response.content)).convert("RGB")
-        img = img.resize((500, 300))
+        img = img.resize((500, 300))  # Kích thước ảnh
+
+        # Tạo đối tượng vẽ
         d = ImageDraw.Draw(img)
+
+        # Thử tải font hỗ trợ tiếng Việt
         try:
-            font = ImageFont.truetype("arial.ttf", 40)
+            # Dùng font DejaVuSans hỗ trợ tiếng Việt, tải từ hệ thống hoặc fallback
+            font = ImageFont.truetype("DejaVuSans.ttf", 50)  # Tăng kích thước font
         except:
-            font = ImageFont.load_default()
-        d.text((10, 10), text, font=font, fill=(255, 255, 255), stroke_width=2, stroke_fill=(0, 0, 0))
+            try:
+                font = ImageFont.truetype("LiberationSans-Regular.ttf", 50)  # Font khác hỗ trợ tiếng Việt
+            except:
+                font = ImageFont.load_default()  # Fallback cuối cùng, nhưng size nhỏ hơn
+                font = ImageFont.truetype(font.path, 50) if hasattr(font, 'path') else font
+
+        # Tính toán kích thước text để căn giữa
+        text_bbox = d.textbbox((0, 0), text, font=font)
+        text_width = text_bbox[2] - text_bbox[0]
+        text_height = text_bbox[3] - text_bbox[1]
+        img_width, img_height = img.size
+        x = (img_width - text_width) // 2  # Căn giữa ngang
+        y = (img_height - text_height) // 2  # Căn giữa dọc
+
+        # Thêm nền đen trong suốt để text nổi bật
+        d.rectangle(
+            [(x - 10, y - 10), (x + text_width + 10, y + text_height + 10)],
+            fill=(0, 0, 0, 180)  # Màu đen, độ trong suốt 180/255
+        )
+
+        # Vẽ text với màu vàng (hoặc đỏ) để nổi bật
+        d.text(
+            (x, y),
+            text,
+            font=font,
+            fill=(255, 215, 0),  # Màu vàng gold
+            stroke_width=2,
+            stroke_fill=(0, 0, 0)  # Viền đen để tăng độ tương phản
+        )
+
+        # Lưu ảnh vào buffer
         buffer = io.BytesIO()
         img.save(buffer, format="PNG")
         buffer.seek(0)
         return buffer
+
+    except requests.RequestException as e:
+        return f"Lỗi khi tải ảnh: {str(e)}"
     except Exception as e:
         return f"Lỗi khi tạo meme: {str(e)}"
-
-def track_id(user_id):
-    if user_id == 6779771948:
-        return "Bảo"
-    elif user_id == 7652652250:
-        return "Tuyên"
-    elif user_id == 5066396885:
-        return "Nguyên"
-    else:
-        return -1
 
 def get_chunk(content, chunk_size=4096):
     return [content[i:i+chunk_size] for i in range(0, len(content), chunk_size)]
