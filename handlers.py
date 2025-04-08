@@ -33,6 +33,7 @@ def setup_handlers(application):
     application.add_handler(CommandHandler("meme", meme))
     application.add_handler(CommandHandler("crypto", crypto))
     application.add_handler(CommandHandler("macro", macro))
+    application.add_handler(CommandHandler("meme_random", meme_random))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -196,19 +197,12 @@ async def meme_random(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_group_id(update, context):
         return
     
-    await update.message.reply_text("Đợi tao kiếm ảnh random làm meme...")
+    await update.message.reply_text("Đợi tao kiếm ảnh random làm meme, tml kiên nhẫn chút!")
     
     # Danh sách từ khóa ngẫu nhiên
-    keywords = ["funny cat", "dumb face", "fail moment"]
+    keywords = ["funny cat", "dumb face", "fail moment", "epic fail", "derp", "awkward moment"]
     query = random.choice(keywords)
-    user_id = update.message.from_user.id
-    user_name = track_id(user_id)
-    captions = {
-        "Bảo": "Khi thằng Bảo simp mà giả vờ fuck boi!",
-        "Tuyên": "Mặt thầy Tuyên lúc cháy acc crypto!",
-        "Vĩnh": "Vĩnh overthinking tới mức quên sống luôn!",
-        "Nguyên": "Nguyên bật đèn gas mà đéo ai sợ!"}
-    caption = captions.get(user_name, random.choice(captions.values())) if user_name != -1 else random.choice(captions.values())
+    
     # Gọi Google Custom Search API
     url = f"https://www.googleapis.com/customsearch/v1?q={query}&key={GOOGLE_API_KEY}&cx={GOOGLE_CSE_ID}&searchType=image&num=5"
     try:
@@ -217,17 +211,46 @@ async def meme_random(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data = response.json()
         
         if 'items' not in data or not data['items']:
-            await update.message.reply_text("Đéo tìm được ảnh nào, chắc hết quota Google rồi tml!")
+            await update.message.reply_text("Đéo tìm được ảnh nào, chắc Google hết quota rồi tml!")
             return
         
         # Chọn ngẫu nhiên một ảnh từ 5 kết quả
         image_url = random.choice(data['items'])['link']
         
-        # Danh sách caption ngẫu nhiên
+        # Danh sách caption ngẫu nhiên, hài hước, láo toét
         captions = [
-            "Khi mày nghĩ mình giỏi nhưng đéo ai công nhận!",
-            "Nhìn mặt mày lúc thua kèo crypto!",
-            "Tụi mày trong nhóm lúc hết tiền chơi bar!"
+            # Chung chung
+            "Khi mày nghĩ mình đẹp trai nhưng gương bảo đéo!",
+            "Đời mày lúc hết tiền mà bạn bè bơ đẹp!",
+            "Nhìn mặt mày lúc biết mình ngu thật chứ không phải giả vờ!",
+            "Khi mày cố tỏ ra nguy hiểm nhưng tụi nhỏ nó cười vào mặt!",
+            "Mày lúc phát hiện crush thích thằng khác, đm buồn vl!",
+            "Khi mày gáy to nhưng đéo ai care!",
+            "Đời mày lúc bị sếp chửi mà phải cười tươi!",
+            "Mày lúc thua kèo mà vẫn cố gân cổ cãi!",
+            "Khi mày say mà tưởng mình là siêu nhân!",
+            "Tụi mày lúc hết tiền chơi bar mà giả vờ kêu no!",
+            
+            # Cà khịa nhóm
+            "Bảo lúc simp con bé Đà Nẵng mà giả bộ cool ngầu!",
+            "Thầy Tuyên lúc cháy acc crypto mà vẫn gáy ‘tao ổn’!",
+            "Vĩnh lúc overthinking tới mức quên cả thở!",
+            "Nguyên lúc bật đèn gas mà tụi tao đéo sợ nhé tml!",
+            "Tụi mày lúc họp nhóm mà thằng nào cũng giả mù!",
+            
+            # Tình huống đời thường
+            "Khi mẹ hỏi tiền đâu mà mày đéo dám trả lời!",
+            "Mày lúc đi bar quên ví phải cầu cứu anh em!",
+            "Khi crush nhắn lại mà mày run như cầy sấy!",
+            "Mày lúc chơi game thua mà đổ tại lag!",
+            "Đời mày lúc biết lương tháng không đủ mua bia!",
+            
+            # Bonus cà khịa sâu cay
+            "Mày lúc tỏ ra hiểu biết nhưng đéo ai hỏi ý kiến!",
+            "Khi mày nghĩ mình là alpha mà tụi nó gọi mày là simp!",
+            "Mày lúc cưa gái fail mà vẫn tự nhủ ‘nó không xứng’!",
+            "Tụi mày lúc họp nhóm mà thằng nào cũng bấm điện thoại!",
+            "Khi mày cố làm meme nhưng đéo ai cười!"
         ]
         caption = random.choice(captions)
         
