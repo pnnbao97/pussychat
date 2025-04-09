@@ -1,8 +1,9 @@
 import io
+import google.generativeai as genai
 import requests
 from PIL import Image, ImageDraw, ImageFont
 from semantic_kernel.contents import ChatHistory
-from api import chat_service, execution_settings
+from api import chat_service, execution_settings, GEMINI_API_KEY
 import time
 from telegram.ext import ContextTypes
 from telegram import Update
@@ -15,45 +16,72 @@ async def create_meme_from_image(image_url, text):
         response = requests.get(image_url, timeout=10)
         response.raise_for_status()
         img = Image.open(io.BytesIO(response.content)).convert("RGB")
-        img = img.resize((500, 300))  # Kích thước ảnh
+        img = img.resize((500, 300))  # Kích thước ảnh cố định
 
         # Tạo đối tượng vẽ
         d = ImageDraw.Draw(img)
 
-        # Thử tải font hỗ trợ tiếng Việt
+        # Tải font từ Google Fonts (Noto Sans hỗ trợ tiếng Việt)
+        font_url = "https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoSans/NotoSans-Regular.ttf"
         try:
-            # Dùng font DejaVuSans hỗ trợ tiếng Việt, tải từ hệ thống hoặc fallback
-            font = ImageFont.truetype("DejaVuSans.ttf", 50)  # Tăng kích thước font
-        except:
-            try:
-                font = ImageFont.truetype("LiberationSans-Regular.ttf", 50)  # Font khác hỗ trợ tiếng Việt
-            except:
-                font = ImageFont.load_default()  # Fallback cuối cùng, nhưng size nhỏ hơn
-                font = ImageFont.truetype(font.path, 50) if hasattr(font, 'path') else font
+            font_response = requests.get(font_url, timeout=10)
+            font_response.raise_for_status()
+            font_size = 25  # Tăng kích thước font từ 50 lên 70
+            font = ImageFont.truetype(io.BytesIO(font_response.content), font_size)
+        except Exception as e:
+            # Fallback về font mặc định nếu không tải được
+            font_size = 50  # Font mặc định thường nhỏ hơn
+            font = ImageFont.load_default()
+            print(f"Warning: Could not load Noto Sans font, using default font: {str(e)}")
 
-        # Tính toán kích thước text để căn giữa
-        text_bbox = d.textbbox((0, 0), text, font=font)
-        text_width = text_bbox[2] - text_bbox[0]
-        text_height = text_bbox[3] - text_bbox[1]
+        # Thiết lập giới hạn chiều rộng và chia dòng
+        max_width = img.width - 20  # Margin 10px mỗi bên
+        lines = []
+        current_line = ""
+        
+        # Chia dòng văn bản
+        for word in text.split():
+            test_line = current_line + word + " "
+            test_width = d.textlength(test_line, font=font)
+            if test_width <= max_width:
+                current_line = test_line
+            else:
+                if current_line:
+                    lines.append(current_line.strip())
+                current_line = word + " "
+        if current_line:
+            lines.append(current_line.strip())
+
+        # Tính chiều cao tổng của văn bản
+        line_height = font_size + 10  # Tăng khoảng cách giữa các dòng (font_size + 10px)
+        total_text_height = len(lines) * line_height
+
+        # Đặt vị trí chữ ở dưới (cách đáy 10px)
         img_width, img_height = img.size
-        x = (img_width - text_width) // 2  # Căn giữa ngang
-        y = (img_height - text_height) // 2  # Căn giữa dọc
+        y_start = img_height - total_text_height - 10  # 10px margin từ đáy
 
-        # Thêm nền đen trong suốt để text nổi bật
+        # Tính chiều rộng tối đa của các dòng để căn giữa
+        max_text_width = max(d.textlength(line, font=font) for line in lines)
+
+        # Thêm nền đen trong suốt cho toàn bộ văn bản
         d.rectangle(
-            [(x - 10, y - 10), (x + text_width + 10, y + text_height + 10)],
+            [(10, y_start - 10), (img_width - 10, y_start + total_text_height + 10)],
             fill=(0, 0, 0, 180)  # Màu đen, độ trong suốt 180/255
         )
 
-        # Vẽ text với màu vàng (hoặc đỏ) để nổi bật
-        d.text(
-            (x, y),
-            text,
-            font=font,
-            fill=(255, 215, 0),  # Màu vàng gold
-            stroke_width=2,
-            stroke_fill=(0, 0, 0)  # Viền đen để tăng độ tương phản
-        )
+        # Vẽ từng dòng văn bản, căn giữa theo chiều ngang
+        for i, line in enumerate(lines):
+            line_width = d.textlength(line, font=font)
+            x = (img_width - line_width) // 2  # Căn giữa ngang cho mỗi dòng
+            y = y_start + i * line_height
+            d.text(
+                (x, y),
+                line,
+                font=font,
+                fill=(255, 215, 0),  # Màu vàng gold
+                stroke_width=2,
+                stroke_fill=(0, 0, 0)  # Viền đen
+            )
 
         # Lưu ảnh vào buffer
         buffer = io.BytesIO()
@@ -104,3 +132,24 @@ async def chatbot(message: str, group_id, user_id):
     chat_history.add_user_message(history + f"Kết thúc phần lịch sử trò chuyện. Bây giờ hãy trả lời câu hỏi của {user_name}: {message}")
     response = await chat_service.get_chat_message_content(chat_history, execution_settings)
     return str(response)
+
+genai.configure(api_key=GEMINI_API_KEY)  # Cấu hình API key
+client = genai.GenerativeModel('gemini-2.0-flash-exp')  # Khởi tạo model trực tiếp
+async def analyze_image(image_url=None, image_data=None, prompt="Mô tả những gì có trong ảnh (nếu ảnh có người thì nhận diện người đó luôn nếu được)"):
+    try:
+        if image_url:
+            response = requests.get(image_url, timeout=10)
+            response.raise_for_status()
+            image_content = response.content
+            mime_type = "image/jpeg" if image_url.endswith(".jpg") or image_url.endswith(".jpeg") else "image/png"
+        elif image_data:
+            image_content = image_data
+            mime_type = "image/jpeg"  # Giả định mặc định, có thể cần điều chỉnh
+
+        # Tạo nội dung cho Gemini
+        response = client.generate_content(
+            [prompt, {"mime_type": mime_type, "data": image_content}]
+        )
+        return response.text
+    except Exception as e:
+        return f"Lỗi khi phân tích ảnh: {str(e)}"

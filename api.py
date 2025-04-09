@@ -28,6 +28,7 @@ DS_KEY = os.getenv('DEEPSEEK')
 COINGECKO_API = "https://api.coingecko.com/api/v3"
 FRED_API_KEY = os.getenv("FRED_API")
 FRED_BASE_URL = "https://api.stlouisfed.org/fred/series/observations"
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
 reddit = praw.Reddit(client_id=REDDIT_CLIENT_ID, client_secret=REDDIT_CLIENT_SECRET, user_agent=REDDIT_USER_AGENT)
 RSS_FEEDS = [
@@ -304,5 +305,5 @@ async def analyze_with_openai(query, information):
             prompt += f"{item}\n\n"
     prompt += "\nHãy tổng hợp và phân tích những thông tin trên. Cung cấp:\n1. Tóm tắt chính về chủ đề\n2. Các điểm quan trọng từ mỗi nguồn\n3. Đánh giá độ tin cậy của các nguồn\n4. Kết luận tổng thể và khuyến nghị (nếu có)"
     chat_history.add_user_message(prompt)
-    response = await chat_service.get_chat_message_content(chat_history, OpenAIChatPromptExecutionSettings(max_tokens=3000, temperature=1.5))
+    response = await chat_service.get_chat_message_content(chat_history, OpenAIChatPromptExecutionSettings(max_tokens=3000, temperature=1.2))
     return str(response)

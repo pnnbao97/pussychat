@@ -2,7 +2,7 @@ from telegram import Update
 import asyncio
 from telegram.ext import CommandHandler, MessageHandler, filters, ContextTypes
 from api import fetch_news, summarize_news, get_wiki_info, get_news_info, get_reddit_info, get_google_search_results, extract_content_from_url, analyze_with_openai
-from utils import create_meme_from_image, track_id, get_chunk, check_group_id, analyze_content_with_openai, general_prompt, chatbot
+from utils import create_meme_from_image, track_id, get_chunk, check_group_id, analyze_content_with_openai, general_prompt, chatbot, analyze_image
 from conversation import conversation_manager
 from datetime import datetime
 import requests
@@ -34,7 +34,8 @@ def setup_handlers(application):
     application.add_handler(CommandHandler("crypto", crypto))
     application.add_handler(CommandHandler("macro", macro))
     application.add_handler(CommandHandler("meme_random", meme_random))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    application.add_handler(MessageHandler(filters.TEXT, handle_text))
+    application.add_handler(MessageHandler(filters.PHOTO | (filters.PHOTO & filters.TEXT), handle_photo_or_text))
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_group_id(update, context):
@@ -73,20 +74,24 @@ async def analyze_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not url:
         await update.message.reply_text("Nhập url sau lệnh /analyze thằng ml.")
         return
-    await update.message.reply_text("Đang truy xuất nội dung từ URL...")
+    processing_msg = await update.message.reply_text("Đang truy xuất nội dung từ URL...")
     content = extract_content_from_url(url)
     if "Lỗi" in content:
         await update.message.reply_text(content)
         return
-    await update.message.reply_text("Đang phân tích nội dung...")
+    await context.bot.edit_message_text("Đang phân tích nội dung...", chat_id=group_id, message_id=processing_msg.message_id)
     analysis = await analyze_content_with_openai(content)
     await conversation_manager.add_message(group_id, user_id, user_name, "Phân tích bài báo này cho tao", analysis)
-    await update.message.reply_text(f"**Kết quả phân tích**:\n{analysis}")
+    await context.bot.edit_message_text(f"**Kết quả phân tích**:\n{analysis}", chat_id=group_id, message_id=processing_msg.message_id)
 
 async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_group_id(update, context):
         return
-    question = " ".join(context.args) if context.args else ""
+    replied_message = update.message.reply_to_message
+    if replied_message:
+        question = replied_message.text
+    else:
+        question = " ".join(context.args) if context.args else ""
     user_id = update.message.from_user.id
     group_id = update.message.chat_id
     user_name = track_id(user_id)
@@ -127,12 +132,12 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not query:
         await update.message.reply_text("Nhập chủ đề mày muốn tao truy xuất sau lệnh /search tml")
         return
-    await update.message.reply_text(f"Đang tìm kiếm thông tin về '{query}' từ nhiều nguồn. Đợi tao tí nha thằng ml...")
+    processing_msg = await update.message.reply_text(f"Đang tìm kiếm thông tin về '{query}' từ nhiều nguồn. Hối hối cái l, đợi t tí...")
     tasks = [
         asyncio.to_thread(get_wiki_info, query),
         asyncio.to_thread(get_news_info, query, False, 3),
-        asyncio.to_thread(get_reddit_info, query, 3),
-        asyncio.to_thread(get_google_search_results, query, 3)
+        asyncio.to_thread(get_reddit_info, query, 5),
+        asyncio.to_thread(get_google_search_results, query, 5)
     ]
     results = await asyncio.gather(*tasks)
     wiki_info, news_info, reddit_info, google_info = results
@@ -153,11 +158,11 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if isinstance(google_info, list):
         all_info.extend(google_info)
     else:
-        await update.message.reply_text("Tụi mày search nhiều quá dùng hết mẹ API google rồi - donate cho thằng Bảo để nó mua gói vip nhé")
+        await context.bot.edit_message_text("Tụi mày search nhiều quá dùng hết mẹ API google rồi - donate cho thằng Bảo để nó mua gói vip nhé", chat_id=group_id, message_id=processing_msg.message_id)
         return
     analysis = await analyze_with_openai(query, all_info)
     await conversation_manager.add_message(group_id, '', '', f"Tìm kiếm và phân tích các nguồn từ chủ đề {query}", analysis)
-    await update.message.reply_text(analysis)
+    await context.bot.edit_message_text(analysis, chat_id=group_id, message_id=processing_msg.message_id)
 
 async def wiki(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_group_id(update, context):
@@ -175,7 +180,9 @@ async def searchimg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_group_id(update, context):
         return
     query = " ".join(context.args)
+    user_id = update.message.from_user.id
     group_id = update.message.chat_id
+    user_name = track_id(user_id)
     if not query:
         await update.message.reply_text("Nhập từ khóa vào tml, ví dụ: /searchimg mèo dễ thương")
         return
@@ -189,7 +196,7 @@ async def searchimg(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_photo(chat_id=group_id, photo=img_url)
             except:
                 await update.message.reply_text("Tao tìm được nhưng đéo gửi lên được, chắc mày lại tìm ảnh porn chứ gì")
-        await conversation_manager.add_message(group_id, '', '', f"Tìm kiếm ảnh về chủ đề {query}", "Pussy gửi trả 5 ảnh")
+        await conversation_manager.add_message(group_id, user_id, user_name, f"Tìm kiếm ảnh về chủ đề {query}", "Pussy gửi trả 5 ảnh")
     else:
         await update.message.reply_text("Không tìm thấy ảnh nào!")
 
@@ -278,9 +285,18 @@ async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if isinstance(news, list):
         for article in news:
             response = f"📰 *{article['title']}*\n\n{article['content'][:300]}...\n\nNguồn: {article['source']}\nNgày đăng: {article['published_at']}\nLink: {article['url']}"
+            response = escape_markdown(response)
             await context.bot.send_message(chat_id=update.message.chat_id, text=response, parse_mode='MarkdownV2')
     else:
         await update.message.reply_text(news)
+
+def escape_markdown(text):
+    # hàm này để fix lỗi markdown 
+    if text is None:
+        return ""
+    # Thoát các ký tự đặc biệt
+    escape_chars = r'\_*[]()~`>#+-=|{}.!'
+    return ''.join(f'\\{c}' if c in escape_chars else c for c in text)
 
 async def meme(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_group_id(update, context):
@@ -290,12 +306,8 @@ async def meme(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Nhập text để tao làm meme, kèm ảnh bằng cách reply ảnh, đm!")
         return
     
-    if not update.message.reply_to_message or not update.message.reply_to_message.photo:
-        await update.message.reply_text("Mày phải reply một ảnh kèm text để tao làm meme, đm! Gửi lại đi!")
-        return
-    
     try:
-        photo = update.message.reply_to_message.photo[-1]
+        photo = update.message.photo[-1]
         file = await photo.get_file()
         image_url = file.file_path
         logger.info(f"Received photo URL: {image_url}")
@@ -395,7 +407,6 @@ async def macro(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ("UMCSENT", "Niềm tin tiêu dùng", "😊")
     ]
     
-    today = datetime.now().strftime("%d/%m/%Y")
     for series_id, name, icon in indicators:
         text, value, date = get_fred_data(series_id, name, icon)
         macro_data.append(text)
@@ -406,25 +417,7 @@ async def macro(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📊 **CHỈ SỐ KINH TẾ VĨ MÔ TỪ FRED** - Dữ liệu mới nhất:\n\n" +
         "\n".join(macro_data))
     await update.message.reply_text(response_text)
-    
-    await update.message.reply_text("Mấy tml trong nhóm ngồi im nghe tao phân tích")
-    analysis_prompt = (
-        "Mày là một trợ lý phân tích kinh tế vĩ mô, láo toét nhưng sắc bén. "
-        "Dựa trên các chỉ số kinh tế sau từ FRED, hãy phân tích tình hình kinh tế hiện tại "
-        "và đưa ra nhận xét ngắn gọn (dưới 500 từ) về tác động đến thị trường tài chính, "
-        "bao gồm chứng khoán, USD, và crypto. Đây là dữ liệu:\n\n" +
-        "\n".join([f"{k}: {v['value']} (Cập nhật: {v['date']})" for k, v in macro_values.items()]) +
-        "\n\nPhân tích đi, đừng dài dòng!"
-    )
-    
-    chat_history = ChatHistory()
-    chat_history.add_system_message(general_prompt)
-    chat_history.add_user_message(analysis_prompt)
-    from api import chat_service, execution_settings
-    analysis = await chat_service.get_chat_message_content(chat_history, execution_settings)
-    
-    await update.message.reply_text(analysis)
-    await conversation_manager.add_message(group_id, user_id, user_name, "Phân tích dữ liệu kinh tế vĩ mô", analysis)
+    await conversation_manager.add_message(group_id, user_id, user_name, "Dữ liệu kinh tế vĩ mô", response_text)
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_group_id(update, context):
@@ -433,8 +426,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if update.message.text:
         text = update.message.text
-    elif update.message.caption:
-        text = update.message.caption
     else: 
         return
     user_id = update.message.from_user.id
@@ -444,6 +435,34 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"(ID: {user_id})\n\nĐây là lần đầu tiên tao nói chuyện với mày, mày chờ tao cập nhật cơ sở dữ liệu đã nhé!")
         return
     question = f"{user_name} forward nội dung từ nơi khác, kêu Pussy phân tích: {text}"
+    response = await chatbot(question, group_id, user_id)
+    await conversation_manager.add_message(group_id, user_id, user_name, question, response)
+    await update.message.reply_text(response)
+
+async def handle_photo_or_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_group_id(update, context):
+        return
+    user_id = update.message.from_user.id
+    group_id = update.message.chat_id
+    user_name = track_id(user_id)
+    if user_name == -1:
+        await update.message.reply_text(f"(ID: {user_id})\n\nĐây là lần đầu tiên tao nói chuyện với mày, mày chờ tao cập nhật cơ sở dữ liệu đã nhé!")
+        return
+    if update.message.forward_origin:
+        if update.message.caption:
+            text = update.message.caption
+            question = f"{user_name} forward nội dung từ nơi khác, kêu Pussy phân tích: {text}"
+            response = await chatbot(question, group_id, user_id)
+            await conversation_manager.add_message(group_id, user_id, user_name, question, response)
+            await update.message.reply_text(response)
+            return
+        else: 
+            return 
+    photo_file = await update.message.photo[-1].get_file()
+    photo_url = photo_file.file_path
+    result = await analyze_image(image_url=photo_url)
+    context = update.message.caption if update.message.caption else ""
+    question = f"{user_name} kêu mày (chính là con mèo Pussy) phân tích ảnh kèm context {context}, vì Pussy không nhận diện được ảnh nên phải nhờ gemini mô tả: {result}."
     response = await chatbot(question, group_id, user_id)
     await conversation_manager.add_message(group_id, user_id, user_name, question, response)
     await update.message.reply_text(response)
