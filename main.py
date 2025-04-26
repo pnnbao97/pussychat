@@ -36,8 +36,8 @@ async def setup_bot():
     # scheduler.add_job(fetch_crypto_and_macro, 'interval', hours=12, args=[bot_application])
     scheduler.add_job(keep_alive, 'interval', minutes=5, args=[bot_application])
     scheduler.start()
-    # webhook_url = "https://pussychat.onrender.com/webhook"
-    webhook_url = "https://b4fd-89-39-104-173.ngrok-free.app/webhook"
+    webhook_url = "https://pussychat.onrender.com/webhook"
+    # webhook_url = "https://b4fd-89-39-104-173.ngrok-free.app/webhook"
     await bot_application.bot.set_webhook(url=webhook_url)
     logger.info(f"Webhook set to {webhook_url}")
 
