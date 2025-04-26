@@ -1,4 +1,5 @@
 import asyncio
+import requests
 import threading
 import os
 from dotenv import load_dotenv
@@ -7,7 +8,6 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from flask import Flask, request
 import logging
 from handlers import setup_handlers
-from api import fetch_and_store_news, fetch_crypto_and_macro
 from telegram import Update
 
 # Tải biến môi trường
@@ -32,12 +32,12 @@ async def setup_bot():
 
     # Thiết lập scheduler
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(fetch_and_store_news, 'interval', hours=12, args=[bot_application])
-    scheduler.add_job(fetch_crypto_and_macro, 'interval', hours=12, args=[bot_application])
+    # scheduler.add_job(fetch_and_store_news, 'interval', hours=12, args=[bot_application])
+    # scheduler.add_job(fetch_crypto_and_macro, 'interval', hours=12, args=[bot_application])
     scheduler.add_job(keep_alive, 'interval', minutes=5, args=[bot_application])
     scheduler.start()
-
-    webhook_url = "https://pussychat.onrender.com/webhook"
+    # webhook_url = "https://pussychat.onrender.com/webhook"
+    webhook_url = "https://b4fd-89-39-104-173.ngrok-free.app/webhook"
     await bot_application.bot.set_webhook(url=webhook_url)
     logger.info(f"Webhook set to {webhook_url}")
 
@@ -47,7 +47,6 @@ async def setup_bot():
     return bot_application
 
 async def keep_alive(context):
-    import requests
     try:
         requests.get("https://pussychat.onrender.com/")
         logger.info("Sent keep-alive request")

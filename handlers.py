@@ -1,16 +1,14 @@
 from telegram import Update
 import asyncio
 from telegram.ext import CommandHandler, MessageHandler, filters, ContextTypes
-from api import fetch_news, summarize_news, get_wiki_info, get_news_info, get_reddit_info, get_google_search_results, extract_content_from_url, analyze_with_openai
-from utils import create_meme_from_image, track_id, get_chunk, check_group_id, analyze_content_with_openai, general_prompt, chatbot, analyze_image
+from api import fetch_news, summarize_news, get_wiki_info, get_news_info, get_reddit_info, get_google_search_results, extract_content_from_url, analyze_with_openai, analyze_with_openai
+from agents import pussy_bot
+from utils import track_id, get_chunk, check_group_id, analyze_image
 from conversation import conversation_manager
 from datetime import datetime
 import requests
 import logging
 import os
-from semantic_kernel.contents import ChatHistory
-import random
-
 
 logger = logging.getLogger(__name__)
 
@@ -30,10 +28,8 @@ def setup_handlers(application):
     application.add_handler(CommandHandler("wiki", wiki))
     application.add_handler(CommandHandler("searchimg", searchimg))
     application.add_handler(CommandHandler("news", news))
-    application.add_handler(CommandHandler("meme", meme))
     application.add_handler(CommandHandler("crypto", crypto))
-    application.add_handler(CommandHandler("macro", macro))
-    application.add_handler(CommandHandler("meme_random", meme_random))
+    # application.add_handler(CommandHandler("macro", macro))
     application.add_handler(MessageHandler(filters.TEXT, handle_text))
     application.add_handler(MessageHandler(filters.PHOTO | (filters.PHOTO & filters.TEXT), handle_photo_or_text))
 
@@ -55,7 +51,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     /searchimg [từ khóa] - Tao sẽ giúp mày tìm 5 tấm ảnh liên quan về từ khóa mày nhập
     /ask [tin nhắn] - Nếu mày cần nói chuyện với tao, nhưng nói trước tao cục súc lắm đấy tml.
     /domestic_news - Tao sẽ giúp mày tóm tắt toàn bộ những tin quan trọng trong ngày.
-    /meme [text] - Gửi kèm ảnh + text để tao làm meme.
     /crypto [coin] - Xem giá coin từ CoinGecko.
     /help - Hiển thị trợ giúp
     """
@@ -101,7 +96,7 @@ async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not question:
         await update.message.reply_text("Nhập câu hỏi sau lệnh /ask thằng ml.")
         return
-    response = await chatbot(question, group_id, user_id)
+    response = await pussy_bot(question, group_id, user_id)
     await conversation_manager.add_message(group_id, user_id, user_name, question, response)
     await update.message.reply_text(response)
 
@@ -200,78 +195,6 @@ async def searchimg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Không tìm thấy ảnh nào!")
 
-async def meme_random(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await check_group_id(update, context):
-        return
-    
-    await update.message.reply_text("Đợi tao kiếm ảnh random làm meme, tml kiên nhẫn chút!")
-    
-    # Danh sách từ khóa ngẫu nhiên
-    keywords = ["funny cat", "dumb face", "fail moment", "epic fail", "derp", "awkward moment"]
-    query = random.choice(keywords)
-    
-    # Gọi Google Custom Search API
-    url = f"https://www.googleapis.com/customsearch/v1?q={query}&key={GOOGLE_API_KEY}&cx={GOOGLE_CSE_ID}&searchType=image&num=5"
-    try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()  # Kiểm tra lỗi HTTP
-        data = response.json()
-        
-        if 'items' not in data or not data['items']:
-            await update.message.reply_text("Đéo tìm được ảnh nào, chắc Google hết quota rồi tml!")
-            return
-        
-        # Chọn ngẫu nhiên một ảnh từ 5 kết quả
-        image_url = random.choice(data['items'])['link']
-        
-        # Danh sách caption ngẫu nhiên, hài hước, láo toét
-        captions = [
-            # Chung chung
-            "Khi mày nghĩ mình đẹp trai nhưng gương bảo đéo!",
-            "Đời mày lúc hết tiền mà bạn bè bơ đẹp!",
-            "Nhìn mặt mày lúc biết mình ngu thật chứ không phải giả vờ!",
-            "Khi mày cố tỏ ra nguy hiểm nhưng tụi nhỏ nó cười vào mặt!",
-            "Mày lúc phát hiện crush thích thằng khác, đm buồn vl!",
-            "Khi mày gáy to nhưng đéo ai care!",
-            "Đời mày lúc bị sếp chửi mà phải cười tươi!",
-            "Mày lúc thua kèo mà vẫn cố gân cổ cãi!",
-            "Khi mày say mà tưởng mình là siêu nhân!",
-            "Tụi mày lúc hết tiền chơi bar mà giả vờ kêu no!",
-            
-            # Cà khịa nhóm
-            "Bảo lúc simp con bé Đà Nẵng mà giả bộ cool ngầu!",
-            "Thầy Tuyên lúc cháy acc crypto mà vẫn gáy ‘tao ổn’!",
-            "Vĩnh lúc overthinking tới mức quên cả thở!",
-            "Nguyên lúc bật đèn gas mà tụi tao đéo sợ nhé tml!",
-            "Tụi mày lúc họp nhóm mà thằng nào cũng giả mù!",
-            
-            # Tình huống đời thường
-            "Khi mẹ hỏi tiền đâu mà mày đéo dám trả lời!",
-            "Mày lúc đi bar quên ví phải cầu cứu anh em!",
-            "Khi crush nhắn lại mà mày run như cầy sấy!",
-            "Mày lúc chơi game thua mà đổ tại lag!",
-            "Đời mày lúc biết lương tháng không đủ mua bia!",
-            
-            # Bonus cà khịa sâu cay
-            "Mày lúc tỏ ra hiểu biết nhưng đéo ai hỏi ý kiến!",
-            "Khi mày nghĩ mình là alpha mà tụi nó gọi mày là simp!",
-            "Mày lúc cưa gái fail mà vẫn tự nhủ ‘nó không xứng’!",
-            "Tụi mày lúc họp nhóm mà thằng nào cũng bấm điện thoại!",
-            "Khi mày cố làm meme nhưng đéo ai cười!"
-        ]
-        caption = random.choice(captions)
-        
-        # Tạo meme
-        meme_img = await create_meme_from_image(image_url, caption)
-        if isinstance(meme_img, str):
-            await update.message.reply_text(meme_img)  # Nếu lỗi, trả về thông báo
-        else:
-            await context.bot.send_photo(chat_id=update.message.chat_id, photo=meme_img)
-    
-    except requests.RequestException as e:
-        await update.message.reply_text(f"Lỗi khi lấy ảnh: {str(e)}. Thử lại sau nha tml!")
-    except Exception as e:
-        await update.message.reply_text(f"Lỗi gì đó rồi: {str(e)}. Tao đéo biết fix sao luôn!")
 async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_group_id(update, context):
         return
@@ -297,32 +220,6 @@ def escape_markdown(text):
     # Thoát các ký tự đặc biệt
     escape_chars = r'\_*[]()~`>#+-=|{}.!'
     return ''.join(f'\\{c}' if c in escape_chars else c for c in text)
-
-async def meme(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await check_group_id(update, context):
-        return
-    text = " ".join(context.args)
-    if not text:
-        await update.message.reply_text("Nhập text để tao làm meme, kèm ảnh bằng cách reply ảnh, đm!")
-        return
-    
-    try:
-        photo = update.message.photo[-1]
-        file = await photo.get_file()
-        image_url = file.file_path
-        logger.info(f"Received photo URL: {image_url}")
-        
-        await update.message.reply_text("Đợi tao vẽ cái meme từ ảnh mày gửi...")
-        meme_img = await create_meme_from_image(image_url, text)
-        
-        if isinstance(meme_img, str):
-            await update.message.reply_text(meme_img)
-        else:
-            await context.bot.send_photo(chat_id=update.message.chat_id, photo=meme_img)
-            logger.info("Meme sent successfully")
-    except Exception as e:
-        logger.error(f"Error in meme creation: {str(e)}")
-        await update.message.reply_text(f"Lỗi khi xử lý ảnh hoặc tạo meme: {str(e)}. Thử lại đi tml!")
 
 async def crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_group_id(update, context):
@@ -380,44 +277,44 @@ async def crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(response_text)
     await conversation_manager.add_message(group_id, user_id, user_name, f"Tìm thông tin đồng coin, cập nhật {today}", response_text)
 
-async def macro(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    from api import get_fred_data
-    if not await check_group_id(update, context):
-        return
-    
-    user_id = update.message.from_user.id
-    group_id = update.message.chat_id
-    user_name = track_id(user_id)
-    await update.message.reply_text("Đợi tao moi dữ liệu kinh tế vĩ mô từ FRED, tml đừng hối!")
-    
-    macro_data = []
-    macro_values = {}
-    
-    indicators = [
-        ("GDPC1", "GDP thực tế (tỷ USD)", "📈"),
-        ("CPIAUCSL", "Chỉ số giá tiêu dùng (CPI)", "💸"),
-        ("FEDFUNDS", "Lãi suất Fed (%)", "🏦"),
-        ("UNRATE", "Tỷ lệ thất nghiệp (%)", "👷‍♂️"),
-        ("PAYEMS", "Bảng lương phi nông nghiệp (nghìn người)", "💼"),
-        ("RSAFS", "Doanh số bán lẻ (triệu USD)", "🛒"),
-        ("INDPRO", "Sản xuất công nghiệp", "🏭"),
-        ("CPILFESL", "Lạm phát lõi (Core CPI)", "🔥"),
-        ("DGS10", "Lợi suất trái phiếu 10 năm (%)", "📜"),
-        ("BOPGSTB", "Cán cân thương mại (triệu USD)", "⚖️"),
-        ("UMCSENT", "Niềm tin tiêu dùng", "😊")
-    ]
-    
-    for series_id, name, icon in indicators:
-        text, value, date = get_fred_data(series_id, name, icon)
-        macro_data.append(text)
-        if value is not None:
-            macro_values[name] = {"value": value, "date": date}
-    
-    response_text = (
-        "📊 **CHỈ SỐ KINH TẾ VĨ MÔ TỪ FRED** - Dữ liệu mới nhất:\n\n" +
-        "\n".join(macro_data))
-    await update.message.reply_text(response_text)
-    await conversation_manager.add_message(group_id, user_id, user_name, "Dữ liệu kinh tế vĩ mô", response_text)
+# async def macro(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#     from api import get_fred_data
+#     if not await check_group_id(update, context):
+#         return
+#
+#     user_id = update.message.from_user.id
+#     group_id = update.message.chat_id
+#     user_name = track_id(user_id)
+#     await update.message.reply_text("Đợi tao moi dữ liệu kinh tế vĩ mô từ FRED, tml đừng hối!")
+#
+#     macro_data = []
+#     macro_values = {}
+#
+#     indicators = [
+#         ("GDPC1", "GDP thực tế (tỷ USD)", "📈"),
+#         ("CPIAUCSL", "Chỉ số giá tiêu dùng (CPI)", "💸"),
+#         ("FEDFUNDS", "Lãi suất Fed (%)", "🏦"),
+#         ("UNRATE", "Tỷ lệ thất nghiệp (%)", "👷‍♂️"),
+#         ("PAYEMS", "Bảng lương phi nông nghiệp (nghìn người)", "💼"),
+#         ("RSAFS", "Doanh số bán lẻ (triệu USD)", "🛒"),
+#         ("INDPRO", "Sản xuất công nghiệp", "🏭"),
+#         ("CPILFESL", "Lạm phát lõi (Core CPI)", "🔥"),
+#         ("DGS10", "Lợi suất trái phiếu 10 năm (%)", "📜"),
+#         ("BOPGSTB", "Cán cân thương mại (triệu USD)", "⚖️"),
+#         ("UMCSENT", "Niềm tin tiêu dùng", "😊")
+#     ]
+#
+#     for series_id, name, icon in indicators:
+#         text, value, date = get_fred_data(series_id, name, icon)
+#         macro_data.append(text)
+#         if value is not None:
+#             macro_values[name] = {"value": value, "date": date}
+#
+#     response_text = (
+#         "📊 **CHỈ SỐ KINH TẾ VĨ MÔ TỪ FRED** - Dữ liệu mới nhất:\n\n" +
+#         "\n".join(macro_data))
+#     await update.message.reply_text(response_text)
+#     await conversation_manager.add_message(group_id, user_id, user_name, "Dữ liệu kinh tế vĩ mô", response_text)
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_group_id(update, context):

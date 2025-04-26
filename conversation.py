@@ -1,6 +1,6 @@
 from semantic_kernel.contents import ChatHistory
-from api import chat_service, execution_settings
 from utils import track_id
+from api import chat_service, execution_settings
 import time
 
 class GroupConversationManager:
@@ -19,9 +19,7 @@ class GroupConversationManager:
         
         time_diff = current_time - self.last_activity_time[group_id]
         if time_diff > self.inactivity_timeout and len(self.group_histories[group_id]) > 0:
-            summary = await self._summarize_conversation(group_id)
             self.group_histories[group_id] = ChatHistory()
-            self.group_histories[group_id].add_system_message(f"Tóm tắt trước đó: {summary}")
         
         self.last_activity_time[group_id] = current_time
         
@@ -39,7 +37,6 @@ class GroupConversationManager:
         conversation_text = "\n".join(messages)
         
         summary_history = ChatHistory()
-        summary_history.add_system_message("Mày là một con mèo thông thái và là trợ lí tổng hợp, tóm tắt thông tin.")
         summary_history.add_user_message(f"Hãy tóm tắt ngắn gọn cuộc trò chuyện sau, bảo toàn ý chính và thông tin quan trọng (không quá 3 câu):\n{conversation_text}")
         
         summary = await chat_service.get_chat_message_content(summary_history, execution_settings)
@@ -51,12 +48,12 @@ class GroupConversationManager:
             return f"Đây là cuộc trò chuyện mới với {user_name}."
         
         history = self.group_histories[group_id]
-        conversation_history = ""
+        conversation_history = ""       
         for msg in history:
             if msg.role == "system":
-                conversation_history += f"Bởi vì lịch sử chat quá dài nên những tin nhắn quá cũ sẽ được tóm tắt lại. Đây chỉ là phần tóm tắt từ các cuộc trò chuyện trước đó: {msg.content}\n"
+                conversation_history += f"Đây là câu trả lời của Pussy: {msg.content}\n"
             else:
-                conversation_history += f"{msg.content}\n"
+                conversation_history += f"Đây là câu hỏi của mấy thằng trong nhóm: {msg.content}\n"
         return f"Đây là lịch sử cuộc trò chuyện nhóm (được xếp theo thứ tự từ cũ nhất đến mới nhất):\n{conversation_history}\n"
 
 conversation_manager = GroupConversationManager(max_messages=10, summary_threshold=5, inactivity_timeout=900)
